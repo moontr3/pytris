@@ -1256,6 +1256,10 @@ buttons = {
     ],
     "options": {
         Button('Back', (20,20), (100,50), switch_menu, ['main'], 18, 'l','t'),
+        Button('Handling', (0,-150), (300,60), switch_menu, ['handling']),
+    },
+    "handling": {
+        Button('Back', (20,20), (100,50), switch_menu, ['options'], 18, 'l','t'),
     },
     "custom": {
         Button('Start', (-20,-20), (200,90), restart, [], 26, 'r','b'),
@@ -1271,6 +1275,7 @@ menu_names = {
     "pause": "paused",
     "custom": "custom",
     "options": "options",
+    "handling": "handling",
     "game": ""
 }
 menu_names_offsets = {
@@ -1281,6 +1286,7 @@ menu_names_offsets = {
     "pause":0,
     "game":0,
     "options":0,
+    "handling":0,
     "custom":0
 }
 bg_colors = [
