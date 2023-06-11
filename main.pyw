@@ -132,7 +132,7 @@ class BoardSettings:
         blocks.Mino('j'),
         blocks.Mino('s'),
         blocks.Mino('z')
-    ], level_increase=True, death=True):
+    ], level_increase=True, death=True, garbage=False):
         self.name = name
         self.x_size = x_size
         self.y_size = y_size
@@ -142,9 +142,10 @@ class BoardSettings:
         self.minoes = minoes
         self.level_increase = level_increase
         self.death = death
+        self.garbage = garbage
 
     def get_board(self):
-        return Board(self.x_size, self.y_size, self.name, self.level, self.goal_type, self.goal, self.minoes, self.level_increase, self.death)
+        return Board(self.x_size, self.y_size, self.name, self.level, self.goal_type, self.goal, self.minoes, self.level_increase, self.death, self.garbage)
 
 class Button:
     def __init__(self, text, offset, size, func, args=[], text_size=21, horigin='m', vorigin='m'):
@@ -428,7 +429,7 @@ class FallingMino:
         self.width.sort()
 
 class Board:
-    def __init__(self, x_size, y_size, mode_name, level, goal_type, goal, minoes, level_increase, death):
+    def __init__(self, x_size, y_size, mode_name, level, goal_type, goal, minoes, level_increase, death, garbage):
         self.x_size = x_size
         self.y_size = y_size
         self.cell_size = board_size
@@ -453,6 +454,12 @@ class Board:
         self.combo = -1
         self.combo_key = 0
         self.btb_key = 0
+
+        self.garbage_enabled = garbage
+        self.garbage = 0
+        self.garbage_key = 0.0
+        self.lines_sent = 0
+        self.targets = []
 
         self.death = death
         self.death_key = 0
@@ -542,6 +549,45 @@ class Board:
             ] for i in self.falling_mino.blocks
         ])
 
+    # sends garbage
+    def send_garbage(self, lines):
+        if self.garbage_enabled:
+            if self.garbage > 0:
+                self.garbage -= lines
+                if self.garbage < 0:
+                    lines += self.garbage
+                    self.garbage = 0
+            
+            for i in self.targets:
+                i.send_garbage(lines)
+
+            self.lines_sent += lines
+
+    # receives garbage
+    def recv_garbage(self, lines):
+        if self.garbage_enabled and lines != 0:
+            self.garbage += lines
+            self.shake += 1+lines
+
+    # adds garbage to board
+    def add_garbage(self):
+        if self.garbage_enabled and self.garbage != 0:
+            for i in self.blocks:
+                i.pos[1] -= self.garbage
+                i.v_offset = -self.garbage
+
+            hole_pos = random.randint(0,self.x_size-1)
+            for i in range(self.garbage):
+                for j in range(self.x_size):
+                    if j == hole_pos: continue
+                    self.blocks.append(Block(
+                        (j, self.y_size-1-i),
+                        'garbage'
+                    ))
+
+            self.shake = 5+self.garbage
+            self.garbage = 0
+
     # checks for line clears
     def line_clear_check(self):
         cleared_lines = []
@@ -580,6 +626,7 @@ class Board:
             self.combo += 1
             self.combo_key = 20
             self.add_fx(ActionFX(line_clear_titles[len(cleared_lines)-1]))
+            self.send_garbage(1)
 
             self.lines_left -= len(cleared_lines)
             if self.lines_left <= 0:
@@ -607,6 +654,7 @@ class Board:
 
         else:
             self.combo = -1
+            self.add_garbage()
 
 
         if not btb_added and (
@@ -615,9 +663,12 @@ class Board:
         ):
             self.reset_btb()
 
+        self.recv_garbage(max(0, random.randint(-15,3)))
+
     # replaces current tetromino with the next one from the queue
-    def next(self):
-        self.line_clear_check()
+    def next(self, check=True):
+        if check:
+            self.line_clear_check()
         self.falling_mino = FallingMino(self.queue[0], self.x_size)
         self.lowest = self.falling_mino.pos[1]
         self.calculate_drop()
@@ -633,7 +684,7 @@ class Board:
 
         if self.held == None:
             self.held = self.falling_mino.mino
-            self.next()
+            self.next(False)
         else:
             self.held, self.falling_mino = self.falling_mino.mino, FallingMino(self.held, self.x_size)
             self.lowest = self.falling_mino.pos[1]
@@ -1038,24 +1089,43 @@ class Board:
 
 
         # lines
+        offset = 39*int(self.allow_drop or self.dead)
+
         if self.goal_type == 'lines':
             string = f'{self.lines}/{self.goal}'
         else:
             string = f'{self.lines}L'
 
         draw.text(string, (
-            board_topleft[0]+self.x_size*self.cell_size+10, board_topleft[1]+self.y_size*self.cell_size-60+39*int(self.allow_drop or self.dead)
+            board_topleft[0]+self.x_size*self.cell_size+10, board_topleft[1]+self.y_size*self.cell_size-60+offset
         ), size=21)
+
+
+        # garbage
+        if self.garbage_enabled:
+            size = draw.text(f'{self.lines_sent}L→', (
+                board_topleft[0]+self.x_size*self.cell_size+10, board_topleft[1]+self.y_size*self.cell_size-130+offset
+            ), size=21)[0]
+
+            print(self.garbage, self.garbage_key)
+
+            self.garbage_key = self.garbage_key+(self.garbage-self.garbage_key)/10
+
+            if self.garbage_key > 0:
+                pg.draw.rect(screen, (255,255,255),
+                    (board_topleft[0]-5, board_topleft[1]+(self.y_size-self.garbage_key)*self.cell_size,
+                    5,self.garbage_key*self.cell_size), border_top_left_radius=4
+                )
 
 
         # level
         size = draw.text(f'Lv{self.level+1}', (
-            board_topleft[0]+self.x_size*self.cell_size+10, board_topleft[1]+self.y_size*self.cell_size-90+39*int(self.allow_drop or self.dead)
+            board_topleft[0]+self.x_size*self.cell_size+10, board_topleft[1]+self.y_size*self.cell_size-90+offset
         ), size=21)[0]
 
         if self.level_increase:
             draw.text(f'{self.lines_left}', (
-                board_topleft[0]+self.x_size*self.cell_size+20+size, board_topleft[1]+self.y_size*self.cell_size-90+39*int(self.allow_drop or self.dead)
+                board_topleft[0]+self.x_size*self.cell_size+20+size, board_topleft[1]+self.y_size*self.cell_size-90+offset
             ), size=21, opacity=128)
 
         
@@ -1151,7 +1221,7 @@ boards = [
     BoardSettings('TETR.IO Blitz M123 4-Wide', 4, minoes=m123, goal_type='time', goal=120),
     BoardSettings('Freeroam 4-Wide', 4),
     BoardSettings('Sprint 4-Wide 40L', 4, goal_type='lines', goal=40),
-    BoardSettings('1S test', 10, goal_type='time', goal=1),
+    BoardSettings('Garbage test', garbage=True),
 ]
 selected_board = 0
 keybinds = {
