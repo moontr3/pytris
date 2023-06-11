@@ -393,6 +393,23 @@ class ModeFX:
             int(50-size/20), opacity=size//10, horizontal_margin='m', vertical_margin='m'
         )
 
+class ExWarningFX:
+    def __init__(self):
+        self.key = 0
+        self.deletable = False
+    
+    def update(self):
+        self.key += 1
+        if self.key >= 30:
+            self.deletable = True
+
+    def draw(self, topleft, cell_size):
+        rect = pg.Rect(
+            (topleft[0]-self.key,topleft[1]-self.key),
+            (player.x_size*cell_size+self.key*2, player.y_size*cell_size+self.key*2)
+        )
+        pg.draw.rect(screen, (255,50,50), rect, int((30-self.key)/1.6)+1)
+
 
 # game logic
 
@@ -474,6 +491,11 @@ class Board:
         self.reset_timer = 0
         self.just_reset = False
         self.forfeited = False
+        self.warning_key = 0
+        self.warning = False
+        self.ex_warning = False
+        self.ex_warning_fxs = []
+        self.ex_warning_timeout = 0
 
         self.held = None
         self.just_held = False
@@ -511,7 +533,7 @@ class Board:
     def reset_btb(self):
         self.btb = -1
 
-    # checks if current piece has beel t-spun
+    # checks if current piece has been t-spun
     def is_tspin(self):
         if self.falling_mino == None:
             return False, False
@@ -520,7 +542,7 @@ class Board:
         
         return True, False
 
-    # checks if any of blocks in the blocks list collide with anything on the board
+    # checks if any of the blocks in the blocks list collide with anything on the board
     def collision(self, blocks):
         for block in blocks:
             if block[0] < 0 or block[0] > self.x_size-1 or block[1] > self.y_size-1:
@@ -529,6 +551,22 @@ class Board:
                 if block == i.pos:
                     return True
         return False
+    
+    # recalculates whether the board should light up red
+    def recalculate_warning(self):
+        max_height = self.y_size
+        for i in self.blocks:
+            if i.pos[1] < max_height:
+                max_height = i.pos[1]
+        max_height += self.garbage
+
+        if max_height < 4:
+            self.warning = True
+            self.ex_warning = max_height < 2
+        else:
+            self.warning = False
+            self.ex_warning = False
+
 
     # fills the queue
     def fill_queue(self):
@@ -562,12 +600,14 @@ class Board:
                 i.send_garbage(lines)
 
             self.lines_sent += lines
+            self.recalculate_warning()
 
     # receives garbage
     def recv_garbage(self, lines):
         if self.garbage_enabled and lines != 0:
             self.garbage += lines
             self.shake += 1+lines
+            self.recalculate_warning()
 
     # adds garbage to board
     def add_garbage(self):
@@ -626,7 +666,16 @@ class Board:
             self.combo += 1
             self.combo_key = 20
             self.add_fx(ActionFX(line_clear_titles[len(cleared_lines)-1]))
-            self.send_garbage(1)
+
+            if tspin and not mini_tspin:
+                garbage = len(cleared_lines)*2
+            else:
+                garbage = garbage_line_clear[len(cleared_lines)-1]
+
+            if len(self.blocks) == 0: garbage += 10
+            if self.btb > 0: garbage += 1
+
+            self.send_garbage(garbage)
 
             self.lines_left -= len(cleared_lines)
             if self.lines_left <= 0:
@@ -663,6 +712,7 @@ class Board:
         ):
             self.reset_btb()
 
+        self.recalculate_warning()
         self.recv_garbage(max(0, random.randint(-15,3)))
 
     # replaces current tetromino with the next one from the queue
@@ -953,11 +1003,31 @@ class Board:
         ongoingx = board_topleft[0]
         ongoingy = board_topleft[1]
 
+        # warning fx
+        if self.playing and not self.dead:
+            to_delete = []
+            for i in self.ex_warning_fxs:
+                i.draw(self.board_topleft, self.cell_size)
+                i.update()
+                if i.deletable:
+                    to_delete.append(i)
+            for i in to_delete:
+                self.ex_warning_fxs.remove(i)
+
+            if self.ex_warning:
+                self.ex_warning_timeout -= 1
+                if self.ex_warning_timeout <= 0:
+                    self.ex_warning_timeout = 20
+                    self.ex_warning_fxs.append(ExWarningFX())
+
         # grid
-        pg.draw.rect(screen, (0,0,0), pg.Rect(board_topleft, (self.x_size*self.cell_size, self.y_size*self.cell_size)))
+        self.warning_key = self.warning_key+(int(self.warning)-self.warning_key)/20
+        color = colors.transition((grid_brightness,grid_brightness,grid_brightness), (255,0,0), self.warning_key)
+
+        pg.draw.rect(screen, (int(self.ex_warning)*60,0,0), pg.Rect(board_topleft, (self.x_size*self.cell_size, self.y_size*self.cell_size)))
         for y in range(self.y_size):
             for x in range(self.x_size):
-                pg.draw.rect(screen, (128,128,128), (ongoingx, ongoingy, self.cell_size+1,self.cell_size+1), 1)
+                pg.draw.rect(screen, color, (ongoingx, ongoingy, self.cell_size+1,self.cell_size+1), 1)
 
                 ongoingx += self.cell_size
             ongoingy += self.cell_size
@@ -1107,9 +1177,7 @@ class Board:
                 board_topleft[0]+self.x_size*self.cell_size+10, board_topleft[1]+self.y_size*self.cell_size-130+offset
             ), size=21)[0]
 
-            print(self.garbage, self.garbage_key)
-
-            self.garbage_key = self.garbage_key+(self.garbage-self.garbage_key)/10
+            self.garbage_key = self.garbage_key+(self.garbage-self.garbage_key)/7
 
             if self.garbage_key > 0:
                 pg.draw.rect(screen, (255,255,255),
@@ -1259,7 +1327,8 @@ line_clear_pts = [
     100,
     300,
     500,
-    800
+    800,
+    1500,
 ]
 pc_pts = [
     800,
@@ -1268,12 +1337,17 @@ pc_pts = [
     2000,
     3200    
 ]
+garbage_line_clear = [
+    0,
+    1,
+    2,
+    4
+]
 line_clear_titles = [
     'SINGLE',
     'DOUBLE',
     'TRIPLE',
-    'TETRIS',
-    'QUINTUPLE'
+    'TETRIS'
 ]
 
 popups = []
@@ -1283,6 +1357,7 @@ das = 8
 sdf = 20
 bg_dim = 0.7
 board_size = 30
+grid_brightness = 128
 presence = True
 finish_key = 0
 debug_overlay = False
