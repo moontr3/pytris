@@ -125,14 +125,16 @@ class Popup:
 
 class BoardSettings:
     def __init__(self, name='Classic', x_size=10, y_size=20, def_level=0, goal_type=None, goal=0, minoes=[
-        blocks.Mino('o'),
-        blocks.Mino('i'),
-        blocks.Mino('t'),
-        blocks.Mino('l'),
-        blocks.Mino('j'),
-        blocks.Mino('s'),
-        blocks.Mino('z')
-    ], level_increase=True, death=True, garbage=False):
+            blocks.Mino('o'),
+            blocks.Mino('i'),
+            blocks.Mino('t'),
+            blocks.Mino('l'),
+            blocks.Mino('j'),
+            blocks.Mino('s'),
+            blocks.Mino('z')
+        ], level_increase=True, death=True, garbage=False, garbage_min=0, garbage_max=0, garbage_send_limit=None,
+        garbage_avoidable=True, init_garbage=[]
+    ):
         self.name = name
         self.x_size = x_size
         self.y_size = y_size
@@ -143,9 +145,18 @@ class BoardSettings:
         self.level_increase = level_increase
         self.death = death
         self.garbage = garbage
+        self.garbage_min = garbage_min
+        self.garbage_max = garbage_max
+        self.garbage_send_limit = garbage_send_limit
+        self.garbage_avoidable = garbage_avoidable
+        self.init_garbage = init_garbage
 
     def get_board(self):
-        return Board(self.x_size, self.y_size, self.name, self.level, self.goal_type, self.goal, self.minoes, self.level_increase, self.death, self.garbage)
+        return Board(self.x_size, self.y_size, self.name, self.level, self.goal_type,
+            self.goal, self.minoes, self.level_increase, self.death, self.garbage,
+            self.garbage_min, self.garbage_max, self.garbage_send_limit,
+            self.garbage_avoidable, self.init_garbage
+        )
 
 class Button:
     def __init__(self, text, offset, size, func, args=[], text_size=21, horigin='m', vorigin='m'):
@@ -446,9 +457,15 @@ class FallingMino:
         self.width.sort()
 
 class Board:
-    def __init__(self, x_size, y_size, mode_name, level, goal_type, goal, minoes, level_increase, death, garbage):
+    def __init__(
+            self, x_size, y_size, mode_name, level, goal_type, goal,
+            minoes, level_increase, death, garbage, garbage_min,
+            garbage_max, garbage_send_limit, garbage_avoidable,
+            init_garbage
+        ):
         self.x_size = x_size
         self.y_size = y_size
+        self.blocks = []
         self.cell_size = board_size
         self.mode_name = mode_name
         self.offset = [0,0]
@@ -475,8 +492,15 @@ class Board:
         self.garbage_enabled = garbage
         self.garbage = 0
         self.garbage_key = 0.0
+        self.garbage_min = garbage_min
+        self.garbage_max = garbage_max
+        self.garbage_send_limit = garbage_send_limit
+        self.garbage_avoidable = garbage_avoidable
         self.lines_sent = 0
         self.targets = []
+        for i in init_garbage:
+            self.garbage = i
+            self.add_garbage()
 
         self.death = death
         self.death_key = 0
@@ -499,7 +523,6 @@ class Board:
 
         self.held = None
         self.just_held = False
-        self.blocks = []
         self.falling_mino = None
         self.allow_drop = True
 
@@ -558,7 +581,7 @@ class Board:
         for i in self.blocks:
             if i.pos[1] < max_height:
                 max_height = i.pos[1]
-        max_height += self.garbage
+        max_height -= self.garbage
 
         if max_height < 4:
             self.warning = True
@@ -605,8 +628,17 @@ class Board:
     # receives garbage
     def recv_garbage(self, lines):
         if self.garbage_enabled and lines != 0:
-            self.garbage += lines
-            self.shake += 1+lines
+            garbage_lines = []
+            for i in self.blocks:
+                if i.letter == 'garbage' and i.pos[1] not in garbage_lines:
+                    garbage_lines.append(i.pos[1])
+
+            self.garbage += min(self.garbage_send_limit-len(garbage_lines), lines)
+            self.garbage = max(0, self.garbage)
+            if self.garbage_send_limit > 0 and self.garbage > self.garbage_send_limit:
+                self.garbage = self.garbage_send_limit
+
+            self.shake += 3+int(lines/2)
             self.recalculate_warning()
 
     # adds garbage to board
@@ -713,7 +745,10 @@ class Board:
             self.reset_btb()
 
         self.recalculate_warning()
-        self.recv_garbage(max(0, random.randint(-15,3)))
+        try:
+            self.recv_garbage(max(0, random.randint(self.garbage_min,self.garbage_max)))
+        except:
+            pass
 
     # replaces current tetromino with the next one from the queue
     def next(self, check=True):
@@ -1181,8 +1216,8 @@ class Board:
 
             if self.garbage_key > 0:
                 pg.draw.rect(screen, (255,255,255),
-                    (board_topleft[0]-5, board_topleft[1]+(self.y_size-self.garbage_key)*self.cell_size,
-                    5,self.garbage_key*self.cell_size), border_top_left_radius=4
+                    (board_topleft[0]-10, board_topleft[1]+(self.y_size-self.garbage_key)*self.cell_size,
+                    10,self.garbage_key*self.cell_size), border_top_left_radius=7
                 )
 
 
@@ -1289,7 +1324,7 @@ boards = [
     BoardSettings('TETR.IO Blitz M123 4-Wide', 4, minoes=m123, goal_type='time', goal=120),
     BoardSettings('Freeroam 4-Wide', 4),
     BoardSettings('Sprint 4-Wide 40L', 4, goal_type='lines', goal=40),
-    BoardSettings('Garbage test', garbage=True),
+    BoardSettings('Dig', garbage=True, garbage_min=1,garbage_max=1, garbage_send_limit=10, garbage_avoidable=False, init_garbage=[1 for i in range(10)]),
 ]
 selected_board = 0
 keybinds = {
