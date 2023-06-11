@@ -133,7 +133,7 @@ class BoardSettings:
             blocks.Mino('s'),
             blocks.Mino('z')
         ], level_increase=True, death=True, garbage=False, garbage_min=0, garbage_max=0, garbage_send_limit=None,
-        garbage_avoidable=True, init_garbage=[]
+        garbage_avoidable=True, init_garbage=[], garbage_goal=False
     ):
         self.name = name
         self.x_size = x_size
@@ -150,12 +150,13 @@ class BoardSettings:
         self.garbage_send_limit = garbage_send_limit
         self.garbage_avoidable = garbage_avoidable
         self.init_garbage = init_garbage
+        self.garbage_goal = garbage_goal
 
     def get_board(self):
         return Board(self.x_size, self.y_size, self.name, self.level, self.goal_type,
             self.goal, self.minoes, self.level_increase, self.death, self.garbage,
             self.garbage_min, self.garbage_max, self.garbage_send_limit,
-            self.garbage_avoidable, self.init_garbage
+            self.garbage_avoidable, self.init_garbage, self.garbage_goal
         )
 
 class Button:
@@ -461,7 +462,7 @@ class Board:
             self, x_size, y_size, mode_name, level, goal_type, goal,
             minoes, level_increase, death, garbage, garbage_min,
             garbage_max, garbage_send_limit, garbage_avoidable,
-            init_garbage
+            init_garbage, garbage_goal
         ):
         self.x_size = x_size
         self.y_size = y_size
@@ -496,6 +497,7 @@ class Board:
         self.garbage_max = garbage_max
         self.garbage_send_limit = garbage_send_limit
         self.garbage_avoidable = garbage_avoidable
+        self.garbage_goal = garbage_goal
         self.lines_sent = 0
         self.targets = []
         for i in init_garbage:
@@ -638,12 +640,12 @@ class Board:
             if self.garbage_send_limit > 0 and self.garbage > self.garbage_send_limit:
                 self.garbage = self.garbage_send_limit
 
-            self.shake += 3+int(lines/2)
+            # self.shake += 3+int(lines/2)
             self.recalculate_warning()
 
     # adds garbage to board
     def add_garbage(self):
-        if self.garbage_enabled and self.garbage != 0:
+        if self.garbage_enabled and self.garbage > 0:
             for i in self.blocks:
                 i.pos[1] -= self.garbage
                 i.v_offset = -self.garbage
@@ -663,10 +665,13 @@ class Board:
     # checks for line clears
     def line_clear_check(self):
         cleared_lines = []
+        garbage_cleared_lines = []
         lines = {}
 
         # getting which lines are cleared
         for i in self.blocks:
+            if i.letter == 'garbage' and i.pos[1] not in garbage_cleared_lines:
+                garbage_cleared_lines.append(i.pos[1])
             if i.pos[1] not in lines:
                 lines[i.pos[1]] = 0
             lines[i.pos[1]] += 1
@@ -674,6 +679,8 @@ class Board:
         for i in lines:
             if lines[i] == self.x_size:
                 cleared_lines.append(i)
+            elif i in garbage_cleared_lines:
+                garbage_cleared_lines.remove(i)
 
         # deleting lines
         self.blocks = [i for i in self.blocks if i.pos[1] not in cleared_lines]
@@ -692,7 +699,10 @@ class Board:
         if tspin:
             self.add_fx(ActionFX(f'{"MINI " if mini_tspin else ""}T-SPIN', (200,100,200), small=True))
 
-        self.lines += len(cleared_lines)
+        if not self.garbage_goal:
+            self.lines += len(cleared_lines)
+        else:
+            self.lines += len(garbage_cleared_lines)
         btb_added = False
         if len(cleared_lines) != 0:
             self.combo += 1
@@ -735,8 +745,6 @@ class Board:
 
         else:
             self.combo = -1
-            self.add_garbage()
-
 
         if not btb_added and (
             len(cleared_lines) > 0 or\
@@ -749,6 +757,9 @@ class Board:
             self.recv_garbage(max(0, random.randint(self.garbage_min,self.garbage_max)))
         except:
             pass
+
+        if not self.garbage_avoidable or len(cleared_lines) == 0:
+            self.add_garbage()
 
     # replaces current tetromino with the next one from the queue
     def next(self, check=True):
@@ -1146,13 +1157,18 @@ class Board:
         # next queue
         ongoing = 5
         for i in self.queue:
+            height = []
             for j in i.pos:
+                if j[1] not in height:
+                    height.append(j[1])
+                height.sort()
+
                 pg.draw.rect(screen, i.color, (
-                    board_topleft[0]+self.x_size*self.cell_size+30+j[0]*15,
-                    board_topleft[1]+j[1]*15+ongoing,
-                    15,15
+                    board_topleft[0]+self.x_size*self.cell_size+30+j[0]*self.cell_size//2,
+                    board_topleft[1]+(j[1]-height[0])*self.cell_size//2+ongoing,
+                    self.cell_size//2,self.cell_size//2
                 ))
-            ongoing += 50
+            ongoing += len(height)*self.cell_size//2+20
 
         # hold piece
         if self.held != None:
@@ -1313,9 +1329,11 @@ boards = [
     BoardSettings('Sprint 40L', goal_type='lines', goal=40),
     BoardSettings('Sprint 20L', goal_type='lines', goal=20),
     BoardSettings('Sprint 10L', goal_type='lines', goal=10),
-    BoardSettings('Sprint 100L', goal_type='lines', goal=100),
+    BoardSettings('Marathon 100L', goal_type='lines', goal=100),
+    BoardSettings('Marathon 150L', goal_type='lines', goal=150),
     BoardSettings('TETR.IO Blitz', goal_type='time', goal=120),
     BoardSettings('TETR.IO Blitz 4-Wide',4, goal_type='time', goal=120),
+    BoardSettings('TETR.IO Blitz Dig',4, goal_type='time', goal=120, garbage=True, garbage_min=1,garbage_max=1, garbage_send_limit=10, garbage_avoidable=False, init_garbage=[1 for i in range(10)], garbage_goal=True),
     BoardSettings('Freeroam M123', minoes=m123),
     BoardSettings('Zen M123', minoes=m123, level_increase=False, death=False),
     BoardSettings('Sprint M123 40L', minoes=m123, goal_type='lines', goal=40),
@@ -1324,7 +1342,11 @@ boards = [
     BoardSettings('TETR.IO Blitz M123 4-Wide', 4, minoes=m123, goal_type='time', goal=120),
     BoardSettings('Freeroam 4-Wide', 4),
     BoardSettings('Sprint 4-Wide 40L', 4, goal_type='lines', goal=40),
-    BoardSettings('Dig', garbage=True, garbage_min=1,garbage_max=1, garbage_send_limit=10, garbage_avoidable=False, init_garbage=[1 for i in range(10)]),
+    BoardSettings('Dig 20L', goal_type='lines', goal=20, garbage=True, garbage_min=1,garbage_max=1, garbage_send_limit=10, garbage_avoidable=False, init_garbage=[1 for i in range(10)], garbage_goal=True),
+    BoardSettings('Dig5 20L', goal_type='lines', goal=20, garbage=True, garbage_min=1,garbage_max=1, garbage_send_limit=5, garbage_avoidable=False, init_garbage=[1 for i in range(5)], garbage_goal=True),
+    BoardSettings('Dig 40L', goal_type='lines', goal=40, garbage=True, garbage_min=1,garbage_max=1, garbage_send_limit=10, garbage_avoidable=False, init_garbage=[1 for i in range(10)], garbage_goal=True),
+    BoardSettings('Dig5 40L', goal_type='lines', goal=40, garbage=True, garbage_min=1,garbage_max=1, garbage_send_limit=5, garbage_avoidable=False, init_garbage=[1 for i in range(5)], garbage_goal=True),
+    BoardSettings('Freeroam Dig', garbage=True, garbage_min=1,garbage_max=1, garbage_send_limit=10, garbage_avoidable=False, init_garbage=[1 for i in range(10)]),
 ]
 selected_board = 0
 keybinds = {
