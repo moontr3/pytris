@@ -8,6 +8,7 @@ import blocks
 import colors
 import glob
 from pypresence import Presence
+import numpy as np
 
 pg.init()
 
@@ -58,7 +59,9 @@ def restart():
     update_presence('Ingame', player.mode_name)
 
 def switch_menu(arg):
-    global menu, finish_key
+    global menu, finish_key, scroll, scroll_vel, boards_limit, selected_board, just_entered, update_scroll
+    if (menu == 'custom' and arg == 'modes') or (menu == 'modes' and arg == 'custom'):
+        selected_board = 0
     menu = arg
     for i in buttons:
         for j in buttons[i]:
@@ -73,6 +76,10 @@ def switch_menu(arg):
         update_presence('Browsing menus')
 
     finish_key = 0
+    scroll = 0
+    scroll_vel = 0
+    just_entered = 2
+    update_scroll = 2
 
 def exit_game():
     global running
@@ -219,6 +226,23 @@ class Button:
 
 
 # effects
+
+class EndCircle:
+    def __init__(self, offset):
+        self.key = random.random()*3.14
+        self.size = random.randint(75,125)
+        self.speed = random.randint(-20,20)/1000
+        self.offset = offset+random.randint(-15,15)
+
+    def update(self):
+        self.key += self.speed
+
+    def draw(self):
+        sin = np.sin(self.key)
+        circle_pos = (self.offset+halfx+sin*20, 150+np.cos(self.key)*20)
+        size = self.size+sin*10
+        pg.draw.circle(screen, (0,0,0), circle_pos, size)
+
 
 class MenuName:
     def __init__(self, text, cur_menu):
@@ -464,6 +488,28 @@ class Board:
             garbage_max, garbage_send_limit, garbage_avoidable,
             init_garbage, garbage_goal
         ):
+        self.stats = {       
+            'Time spent': '',
+            'Lines cleared': 0,
+            'Garbage lines cleared': 0,
+            'Garbage lines received': 0,
+            'Lines sent': 0,
+            'Singles': 0,
+            'Doubles': 0,
+            'Triples': 0,
+            'Tetrises': 0,
+            'T-Spins': 0,
+            'Mini T-Spins': 0,
+        }
+        if level_increase:
+            self.stats['Level'] = 1
+        if not death:
+            self.stats['Times died'] = 0
+        if not garbage:
+            self.stats.pop('Garbage lines received')
+            self.stats.pop('Garbage lines cleared')
+            self.stats.pop('Lines sent')
+
         self.x_size = x_size
         self.y_size = y_size
         self.blocks = []
@@ -625,22 +671,30 @@ class Board:
                 i.send_garbage(lines)
 
             self.lines_sent += lines
+            self.stats['Lines sent'] += lines
             self.recalculate_warning()
 
     # receives garbage
     def recv_garbage(self, lines):
-        if self.garbage_enabled and lines != 0:
+        if self.garbage_enabled and lines > 0:
             garbage_lines = []
+            init_garbage = int(self.garbage)
             for i in self.blocks:
                 if i.letter == 'garbage' and i.pos[1] not in garbage_lines:
                     garbage_lines.append(i.pos[1])
 
-            self.garbage += min(self.garbage_send_limit-len(garbage_lines), lines)
-            self.garbage = max(0, self.garbage)
-            if self.garbage_send_limit > 0 and self.garbage > self.garbage_send_limit:
-                self.garbage = self.garbage_send_limit
+            if self.garbage_send_limit != None:
+                self.garbage += min(self.garbage_send_limit-len(garbage_lines), lines)
+                self.garbage = max(0, self.garbage)
+                if self.garbage_send_limit > 0 and self.garbage > self.garbage_send_limit:
+                    self.garbage = self.garbage_send_limit
+            else:
+                self.garbage += lines
 
-            # self.shake += 3+int(lines/2)
+            self.stats['Garbage lines received'] += abs(init_garbage-self.garbage)
+
+            if init_garbage != self.garbage:
+                self.shake += 3+int(abs(init_garbage-self.garbage)/2)
             self.recalculate_warning()
 
     # adds garbage to board
@@ -697,12 +751,20 @@ class Board:
         # adding score
         tspin, mini_tspin = self.is_tspin()
         if tspin:
+            if mini_tspin: self.stats['Mini T-Spins'] += 1
+            else: self.stats['T-Spins'] += 1
+
             self.add_fx(ActionFX(f'{"MINI " if mini_tspin else ""}T-SPIN', (200,100,200), small=True))
 
         if not self.garbage_goal:
             self.lines += len(cleared_lines)
         else:
             self.lines += len(garbage_cleared_lines)
+
+        self.stats['Lines cleared'] += len(cleared_lines)
+        if self.garbage_enabled:
+            self.stats['Garbage lines cleared'] += len(garbage_cleared_lines)
+
         btb_added = False
         if len(cleared_lines) != 0:
             self.combo += 1
@@ -718,12 +780,15 @@ class Board:
             if self.btb > 0: garbage += 1
 
             self.send_garbage(garbage)
+            self.stats[line_clear_stat_keys[len(cleared_lines)-1]] += 1
 
-            self.lines_left -= len(cleared_lines)
-            if self.lines_left <= 0:
-                self.lines_left += 10
-                if self.level < 14:
-                    self.level += 1
+            if self.level_increase:
+                self.lines_left -= len(cleared_lines)
+                if self.lines_left <= 0:
+                    self.lines_left += 10
+                    if self.level < 14:
+                        self.level += 1
+                        self.stats['Level'] += 1
                     
             avg = sum(cleared_lines)/len(cleared_lines)
             points = line_clear_pts[len(cleared_lines)-1]*(self.level+1)
@@ -810,6 +875,9 @@ class Board:
                 play_sound('fail')
             else:
                 self.blocks = []
+                self.garbage = 0
+                self.stats['Times died'] += 1
+                self.recalculate_warning()
 
             self.shake = 10
             play_sound('glass')
@@ -966,6 +1034,9 @@ class Board:
                 self.hold()
                 
             self.frames += 1
+
+        # stats
+        self.stats['Time spent'] = f'{to_time(self.frames/60)} ({self.frames}F)'
 
         # game ending
         end = False
@@ -1189,7 +1260,7 @@ class Board:
             offset = 0
             rect_y = None
 
-        draw.text(str(int(self.vis_score)), (
+        draw.text(str(round(self.vis_score)), (
             board_topleft[0]-10, board_topleft[1]+self.y_size*self.cell_size-90-offset/2
         ), size=28, horizontal_margin='r', rect_size_y=rect_y)
 
@@ -1324,6 +1395,11 @@ m123 = [
     blocks.Mino('o1')
 ]
 boards = [
+    BoardSettings('1s test', goal_type='time', goal=1),
+    BoardSettings('2s test die', goal_type='time', goal=2, death=False),
+    BoardSettings('2s no level increase', goal_type='time', goal=2, level_increase=False),
+    BoardSettings('3s test die garbage', goal_type='time', goal=2, death=False, garbage=True, garbage_min=5, garbage_max=5, ),
+    BoardSettings('2s no level increase die', goal_type='time', goal=2, level_increase=False, death=False),
     BoardSettings('Freeroam'),
     BoardSettings('Zen', level_increase=False, death=False),
     BoardSettings('Sprint 40L', goal_type='lines', goal=40),
@@ -1333,7 +1409,7 @@ boards = [
     BoardSettings('Marathon 150L', goal_type='lines', goal=150),
     BoardSettings('TETR.IO Blitz', goal_type='time', goal=120),
     BoardSettings('TETR.IO Blitz 4-Wide',4, goal_type='time', goal=120),
-    BoardSettings('TETR.IO Blitz Dig',4, goal_type='time', goal=120, garbage=True, garbage_min=1,garbage_max=1, garbage_send_limit=10, garbage_avoidable=False, init_garbage=[1 for i in range(10)], garbage_goal=True),
+    BoardSettings('TETR.IO Blitz Dig',goal_type='time', goal=120, garbage=True, garbage_min=1,garbage_max=1, garbage_send_limit=10, garbage_avoidable=False, init_garbage=[1 for i in range(10)], garbage_goal=True),
     BoardSettings('Freeroam M123', minoes=m123),
     BoardSettings('Zen M123', minoes=m123, level_increase=False, death=False),
     BoardSettings('Sprint M123 40L', minoes=m123, goal_type='lines', goal=40),
@@ -1349,6 +1425,7 @@ boards = [
     BoardSettings('Freeroam Dig', garbage=True, garbage_min=1,garbage_max=1, garbage_send_limit=10, garbage_avoidable=False, init_garbage=[1 for i in range(10)]),
 ]
 selected_board = 0
+custom_boards = []
 keybinds = {
     'pause': [pg.K_ESCAPE, pg.K_F1],
     'hold': [pg.K_LSHIFT,pg.K_RSHIFT,pg.K_c],
@@ -1406,8 +1483,15 @@ line_clear_titles = [
     'TRIPLE',
     'TETRIS'
 ]
+line_clear_stat_keys = [
+    'Singles',
+    'Doubles',
+    'Triples',
+    'Tetrises'
+]
 
 popups = []
+end_screen_fx = []
 menu_names_fx = [MenuName('pytris','main')]
 arr = 2
 das = 8
@@ -1416,8 +1500,14 @@ bg_dim = 0.7
 board_size = 30
 grid_brightness = 128
 presence = True
+update_scroll = False
 finish_key = 0
 debug_overlay = False
+just_entered = True
+scroll = 0
+scroll_vel = 0
+scroll_limit = 0
+update_scroll = True
 overlay_elements = {
     "FPS": "dfps",
     "Menu": "menu",
@@ -1458,10 +1548,6 @@ buttons = {
     ],
     "options": {
         Button('Back', (20,20), (100,50), switch_menu, ['main'], 18, 'l','t'),
-        Button('Handling', (0,-150), (300,60), switch_menu, ['handling']),
-    },
-    "handling": {
-        Button('Back', (20,20), (100,50), switch_menu, ['options'], 18, 'l','t'),
     },
     "custom": {
         Button('Start', (-20,-20), (200,90), restart, [], 26, 'r','b'),
@@ -1477,7 +1563,6 @@ menu_names = {
     "pause": "paused",
     "custom": "custom",
     "options": "options",
-    "handling": "handling",
     "game": ""
 }
 menu_names_offsets = {
@@ -1491,6 +1576,12 @@ menu_names_offsets = {
     "handling":0,
     "custom":0
 }
+scrolling_supported = [
+    'options',
+    'modes',
+    'custom',
+    'finish'
+]
 bg_colors = [
     (200,80,80),
     (200,200,80),
@@ -1529,6 +1620,8 @@ while running:
     mouse_press = pg.mouse.get_pressed(5)
     mouse_moved = pg.mouse.get_rel()
     keys = pg.key.get_pressed()
+    just_pressed = []
+    hotkey_pressed = False
     lmb_up = False
     mouse_wheel = 0
 
@@ -1543,8 +1636,8 @@ while running:
         if event.type == pg.VIDEORESIZE:
             windowx = event.w
             windowy = event.h
-            if windowx <= 640:
-                windowx = 640
+            if windowx <= 960:
+                windowx = 960
             if windowy <= 640:
                 windowy = 640
             halfx = windowx//2
@@ -1555,6 +1648,8 @@ while running:
                 for j in buttons[i]:
                     j.resize()
 
+            update_scroll = True
+
         if event.type == pg.MOUSEWHEEL:
             mouse_wheel = event.y
 
@@ -1563,6 +1658,8 @@ while running:
                 lmb_up = True
 
         if event.type == pg.KEYDOWN:
+            just_pressed.append(event.key)
+
             if event.key == pg.K_F3:
                 debug_overlay = not debug_overlay
 
@@ -1619,6 +1716,15 @@ while running:
     if menu == 'main':
         draw.text('pytris', (halfx, 100), size=72, style='tetris', horizontal_margin='m')
 
+        # hotkeys
+        if not hotkey_pressed:
+            hotkey_pressed = True
+
+            if pg.K_SPACE in just_pressed:
+                switch_menu('modes')
+            else:
+                hotkey_pressed = False
+
 
 
 ############## PAUSE ##############
@@ -1626,13 +1732,35 @@ while running:
     if menu == 'pause':
         player.draw()
 
+        # hotkeys
+        if not hotkey_pressed:
+            hotkey_pressed = True
+
+            if pg.K_ESCAPE in just_pressed:
+                switch_menu('main')
+            elif pg.K_SPACE in just_pressed:
+                continue_game()
+            elif pg.K_r in just_pressed:
+                restart()
+            else:
+                hotkey_pressed = False
+
 
 
 ############## GAMEMODE SELECTOR ##############
 
-    if menu == 'modes':
-        ongoing = 20
-        for index, i in enumerate(boards):
+    if menu == 'modes' or menu == 'custom':
+        # scrolling
+        if menu == 'custom': cur_list = custom_boards
+        else: cur_list = boards
+
+        if update_scroll:
+            scroll_limit = max(0, len(cur_list)*30-windowy+40)
+            
+        # mode list
+        ongoing = 20-scroll
+
+        for index, i in enumerate(cur_list):
             size = draw.get_text_size(i.name)[0]
             rect = pg.Rect(20,ongoing,size+20,30)
             color = (10 if index%2 == 0 else 30) if selected_board != index else 100
@@ -1645,6 +1773,17 @@ while running:
             pg.draw.rect(screen, (color,color,color), rect, 0, 7)
             draw.text(i.name, (30,rect.centery), vertical_margin='m')
             ongoing += 30
+
+        # hotkeys
+        if not hotkey_pressed:
+            hotkey_pressed = True
+
+            if pg.K_ESCAPE in just_pressed:
+                switch_menu('main')
+            elif pg.K_SPACE in just_pressed:
+                restart()
+            else:
+                hotkey_pressed = False
 
 
 
@@ -1673,12 +1812,13 @@ while running:
 ############## FINISH & LOSE ##############
 
     if menu == 'finish':
+        if update_scroll:
+            scroll_limit = max(0, len(player.stats)*30-windowy+400)
+
         if finish_key < 50:
             finish_key += 1
 
         ease = easing.QuinticEaseOut(0,1,50).ease(finish_key)
-        rect = pg.Rect(20,20,windowx-40,ease*200)
-
         if player.goal_type == 'lines':
             string = f'{to_time(player.frames/60, 3)}'
             sec_string = f'{player.score} • {player.lines}/{player.goal} LINES'
@@ -1686,11 +1826,33 @@ while running:
             string = f'{player.score}'
             sec_string = f'{player.lines} LINES • {to_time(player.goal, 1)}'
 
-        pg.draw.rect(screen, (0,0,0), rect, 0, 14)
-        pg.draw.rect(screen, (128,128,128), rect, 2, 14)
+        # these wiggly ass circles
+        if just_entered:
+            size = draw.get_text_size(string, 100)[0]
+            sec_size = draw.get_text_size(sec_string, 36)[0]
+            size = max(size, sec_size)
 
-        draw.text(string, (halfx,rect.top+10), size=int(100*ease), horizontal_margin='m')
-        draw.text(sec_string, (halfx,rect.bottom-25), size=int(36*ease), horizontal_margin='m', vertical_margin='b')
+            ongoing = -size/2+int(size%30)
+            for i in range(int(size/30)):
+                end_screen_fx.append(EndCircle(ongoing))
+                ongoing += 30
+
+        # name and stats
+        draw.text(player.mode_name, (halfx,300-scroll), size=40, horizontal_margin='m')
+
+        ongoing = 380-scroll
+        for index, i in enumerate(player.stats):
+            draw.text(i, (halfx-300, ongoing), horizontal_margin='l', opacity=255-100*(index%2))
+            draw.text(str(player.stats[i]), (halfx+300, ongoing), horizontal_margin='r', opacity=255-100*(index%2))
+            ongoing += 30
+
+        # score
+        for i in end_screen_fx:
+            i.update()
+            i.draw()
+
+        draw.text(string, (halfx,125), size=int(100*ease), horizontal_margin='m', vertical_margin='m')
+        draw.text(sec_string, (halfx,205), size=int(36*ease), horizontal_margin='m', vertical_margin='m')
 
 
 
@@ -1761,6 +1923,20 @@ while running:
 
             draw.text(f'{i}: {var[overlay_elements[i]]}', (5,ongoing), size=13, style='sys', antialias=False)
             ongoing += 15
+
+
+
+############## SCROLLING ##############
+
+    if menu in scrolling_supported:
+        if scroll < 0: scroll = 0
+        if scroll > scroll_limit: scroll = scroll_limit
+
+        if mouse_wheel != 0:
+            scroll_vel -= mouse_wheel*15
+
+        scroll += scroll_vel
+        scroll_vel /= 1.3
             
 
 
@@ -1770,3 +1946,5 @@ while running:
     pg.display.flip()
     clock.tick(fps)
     dfps = round(clock.get_fps(), 2)
+    if just_entered > 0: just_entered -= 1
+    if update_scroll > 0: update_scroll -= 1
