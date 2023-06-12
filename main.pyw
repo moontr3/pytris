@@ -1969,9 +1969,7 @@ while running:
                 piece_blocks = 'No falling piece'
                 piece_pos = 'No falling piece'
                 piece_letter = 'No falling piece'
-
         else:
-            move_timeout = 'Player not initialized'
             blocks_on_board = 'Player not initialized'
             piece_blocks = 'Player not initialized'
             piece_pos = 'Player not initialized'
