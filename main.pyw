@@ -494,6 +494,8 @@ class Board:
             'Garbage lines cleared': 0,
             'Garbage lines received': 0,
             'Lines sent': 0,
+            'Pieces placed': 0,
+            'Pieces per second': 0,
             'Singles': 0,
             'Doubles': 0,
             'Triples': 0,
@@ -863,7 +865,11 @@ class Board:
 
         self.just_held = False
         self.next()
-        self.pieces.append(self.frames)
+        if len(self.pieces) != 0:
+            self.pieces.append(self.frames-self.pieces[-1])
+        else:
+            self.pieces.append(self.frames)
+        self.stats['Pieces placed'] += 1
 
         if self.collision([[
             i[0]+self.falling_mino.pos[0],
@@ -1037,6 +1043,10 @@ class Board:
 
         # stats
         self.stats['Time spent'] = f'{to_time(self.frames/60)} ({self.frames}F)'
+        if len(self.pieces) != 0:
+            self.stats['Pieces per second'] = round(sum(self.pieces)/len(self.pieces)/60, 2)
+        else:
+            self.stats['Pieces per second'] = 0.0
 
         # game ending
         end = False
