@@ -54,14 +54,21 @@ def continue_game():
 
 def restart():
     global player
-    player = boards[selected_board].get_board()
+    board = custom_boards if custom_game else boards
+    player = board[selected_board].get_board()
     switch_menu('game')
     update_presence('Ingame', player.mode_name)
 
 def switch_menu(arg):
-    global menu, finish_key, scroll, scroll_vel, boards_limit, selected_board, just_entered, update_scroll
+    global menu, finish_key, scroll, scroll_vel, boards_limit, selected_board, just_entered, update_scroll, custom_game
     if (menu == 'custom' and arg == 'modes') or (menu == 'modes' and arg == 'custom'):
         selected_board = 0
+
+    if arg == 'modes':
+        custom_game = False
+    elif arg == 'custom':
+        custom_game = True
+
     menu = arg
     for i in buttons:
         for j in buttons[i]:
@@ -140,7 +147,7 @@ class BoardSettings:
             blocks.Mino('s'),
             blocks.Mino('z')
         ], level_increase=True, death=True, garbage=False, garbage_min=0, garbage_max=0, garbage_send_limit=None,
-        garbage_avoidable=True, init_garbage=[], garbage_goal=False
+        garbage_avoidable=True, init_garbage=[], garbage_goal=False, custom_gravity=None
     ):
         self.name = name
         self.x_size = x_size
@@ -158,12 +165,13 @@ class BoardSettings:
         self.garbage_avoidable = garbage_avoidable
         self.init_garbage = init_garbage
         self.garbage_goal = garbage_goal
+        self.custom_gravity = custom_gravity
 
     def get_board(self):
         return Board(self.x_size, self.y_size, self.name, self.level, self.goal_type,
             self.goal, self.minoes, self.level_increase, self.death, self.garbage,
             self.garbage_min, self.garbage_max, self.garbage_send_limit,
-            self.garbage_avoidable, self.init_garbage, self.garbage_goal
+            self.garbage_avoidable, self.init_garbage, self.garbage_goal, self.custom_gravity
         )
 
 class Button:
@@ -486,7 +494,7 @@ class Board:
             self, x_size, y_size, mode_name, level, goal_type, goal,
             minoes, level_increase, death, garbage, garbage_min,
             garbage_max, garbage_send_limit, garbage_avoidable,
-            init_garbage, garbage_goal
+            init_garbage, garbage_goal, custom_gravity
         ):
         self.stats = {       
             'Time spent': '',
@@ -507,6 +515,11 @@ class Board:
             self.stats['Level'] = 1
         if not death:
             self.stats['Times died'] = 0
+        if custom_gravity != None:
+            if custom_gravity != 0:
+                self.stats['Custom gravity'] = f'{round(1/custom_gravity, 4)}G ({custom_gravity} frames)'
+            else:
+                self.stats['Custom gravity'] = f'∞G (0 frames)'
         if not garbage:
             self.stats.pop('Garbage lines received')
             self.stats.pop('Garbage lines cleared')
@@ -516,6 +529,7 @@ class Board:
         self.y_size = y_size
         self.blocks = []
         self.cell_size = board_size
+        self.custom_gravity = custom_gravity
         self.mode_name = mode_name
         self.offset = [0,0]
 
@@ -1003,11 +1017,19 @@ class Board:
                     self.stop()
 
             # dropping piece
-            self.drop_frames += 1 
-            cur_sdf = 1 if keys['soft'] == 0 else sdf
-            if self.drop_frames*cur_sdf >= drop_timers[self.level]:
-                self.drop_frames = 0
-                self.drop(keys['soft'] != 0)
+            if self.allow_drop:
+                self.drop_frames += 1
+            elif self.drop_frames != 0:
+                self.drop_frames = 0 
+
+            gravity = (drop_timers[self.level] if self.custom_gravity == None else self.custom_gravity)
+            if int((keys['soft']+1)%(gravity/sdf)) == 0 and keys['soft'] != 0:
+                self.drop(True)
+                self.calculate_drop()
+            while self.drop_frames >= gravity and self.allow_drop:
+                self.drop_frames -= gravity
+                self.drop()
+                self.calculate_drop()
 
             # moving left
             if (\
@@ -1042,7 +1064,7 @@ class Board:
             self.frames += 1
 
         # stats
-        self.stats['Time spent'] = f'{to_time(self.frames/60)} ({self.frames}F)'
+        self.stats['Time spent'] = f'{to_time(self.frames/60)} ({self.frames} frames)'
         if len(self.pieces) != 0:
             self.stats['Pieces per second'] = round(sum(self.pieces)/len(self.pieces)/60, 2)
         else:
@@ -1405,11 +1427,6 @@ m123 = [
     blocks.Mino('o1')
 ]
 boards = [
-    BoardSettings('1s test', goal_type='time', goal=1),
-    BoardSettings('2s test die', goal_type='time', goal=2, death=False),
-    BoardSettings('2s no level increase', goal_type='time', goal=2, level_increase=False),
-    BoardSettings('3s test die garbage', goal_type='time', goal=2, death=False, garbage=True, garbage_min=5, garbage_max=5, ),
-    BoardSettings('2s no level increase die', goal_type='time', goal=2, level_increase=False, death=False),
     BoardSettings('Freeroam'),
     BoardSettings('Zen', level_increase=False, death=False),
     BoardSettings('Sprint 40L', goal_type='lines', goal=40),
@@ -1435,7 +1452,17 @@ boards = [
     BoardSettings('Freeroam Dig', garbage=True, garbage_min=1,garbage_max=1, garbage_send_limit=10, garbage_avoidable=False, init_garbage=[1 for i in range(10)]),
 ]
 selected_board = 0
-custom_boards = []
+custom_boards = [
+    BoardSettings('level 7 no death',death=False, def_level=7, ),
+    BoardSettings('level 15 no death',death=False, def_level=15, ),
+    BoardSettings('1s test', goal_type='time', goal=1),
+    BoardSettings('2s test die', goal_type='time', goal=2, death=False),
+    BoardSettings('2s no level increase', goal_type='time', goal=2, level_increase=False),
+    BoardSettings('3s test die garbage', goal_type='time', goal=2, death=False, garbage=True, garbage_min=5, garbage_max=5, ),
+    BoardSettings('2s no level increase die', goal_type='time', goal=2, level_increase=False, death=False),
+    BoardSettings('20G test', custom_gravity=0),
+    BoardSettings('20G test 5l', custom_gravity=0, goal_type='time', goal=5),
+]
 keybinds = {
     'pause': [pg.K_ESCAPE, pg.K_F1],
     'hold': [pg.K_LSHIFT,pg.K_RSHIFT,pg.K_c],
@@ -1449,23 +1476,23 @@ keybinds = {
     'reset': [pg.K_r],
 }
 presses = {i: 0 for i in keybinds}
-drop_timers = [
-    60,
-    47,
-    37,
-    28,
-    21,
-    16,
-    11,
-    8,
-    6,
-    4,
-    3,
-    2,
-    1,
-    1,
-    1,
-    1
+drop_timers = [ # precalculated values
+    60.0,
+    47.58,
+    37.068,
+    28.364,
+    21.312,
+    15.72,
+    11.381,
+    8.084,
+    5.633,
+    3.849,
+    2.579,
+    1.693,
+    1.089,
+    0.686,
+    0.424,
+    0.256
 ]
 line_clear_pts = [
     100,
@@ -1514,6 +1541,7 @@ update_scroll = False
 finish_key = 0
 debug_overlay = False
 just_entered = True
+custom_game = False
 scroll = 0
 scroll_vel = 0
 scroll_limit = 0
@@ -1527,7 +1555,9 @@ overlay_elements = {
     "Piece blocks": "piece_blocks",
     "Piece letter": "piece_letter"
 }
+options_elements = [
 
+]
 buttons = {
     "main": [
         Button('Play', (0,-40), (300,60), switch_menu, ['modes'], 24),
@@ -1864,6 +1894,18 @@ while running:
 
 
 
+############## OPTIONS ##############
+
+    if menu == 'options':
+        ongoing = 50
+        for i in options_elements:
+            ongoing += i.update(ongoing)
+
+        if update_scroll:
+            scroll_limit = max(0, ongoing+50-windowy)
+
+
+
 ############## BUTTONS ##############
 
     try:
@@ -1872,6 +1914,26 @@ while running:
             i.update()
     except:
         pass
+
+
+
+############## SCROLLING ##############
+
+    if menu in scrolling_supported:
+        if scroll < 0: scroll = 0
+        if scroll > scroll_limit: scroll = scroll_limit
+
+        if mouse_wheel != 0:
+            scroll_vel -= mouse_wheel*15
+
+        scroll += scroll_vel
+        scroll_vel /= 1.3
+
+        # scroll bar
+        if scroll_limit > 0:
+            end_pos = (windowy/(scroll_limit+windowy))*(windowy-6)
+            start_pos = 3+(scroll/scroll_limit)*(windowy-end_pos-6)
+            pg.draw.rect(screen, (255,255,255), (windowx-7, start_pos, 4, end_pos), 0, 2)
 
 
 
@@ -1931,20 +1993,6 @@ while running:
 
             draw.text(f'{i}: {var[overlay_elements[i]]}', (5,ongoing), size=13, style='sys', antialias=False)
             ongoing += 15
-
-
-
-############## SCROLLING ##############
-
-    if menu in scrolling_supported:
-        if scroll < 0: scroll = 0
-        if scroll > scroll_limit: scroll = scroll_limit
-
-        if mouse_wheel != 0:
-            scroll_vel -= mouse_wheel*15
-
-        scroll += scroll_vel
-        scroll_vel /= 1.3
             
 
 
