@@ -631,9 +631,9 @@ class Board:
                 max_height = i.pos[1]
         max_height -= self.garbage
 
-        if max_height < 4:
+        if max_height < 3:
             self.warning = True
-            self.ex_warning = max_height < 2
+            self.ex_warning = max_height < 1
         else:
             self.warning = False
             self.ex_warning = False
@@ -1141,7 +1141,7 @@ class Board:
         self.warning_key = self.warning_key+(int(self.warning)-self.warning_key)/20
         color = colors.transition((grid_brightness,grid_brightness,grid_brightness), (255,0,0), self.warning_key)
 
-        pg.draw.rect(screen, (int(self.ex_warning)*60,0,0), pg.Rect(board_topleft, (self.x_size*self.cell_size, self.y_size*self.cell_size)))
+        pg.draw.rect(screen, (self.warning_key*60,0,0), pg.Rect(board_topleft, (self.x_size*self.cell_size, self.y_size*self.cell_size)))
         for y in range(self.y_size):
             for x in range(self.x_size):
                 pg.draw.rect(screen, color, (ongoingx, ongoingy, self.cell_size+1,self.cell_size+1), 1)
@@ -1736,10 +1736,8 @@ while running:
         if not hotkey_pressed:
             hotkey_pressed = True
 
-            if pg.K_ESCAPE in just_pressed:
+            if pg.K_q in just_pressed:
                 switch_menu('main')
-            elif pg.K_SPACE in just_pressed:
-                continue_game()
             elif pg.K_r in just_pressed:
                 restart()
             else:
