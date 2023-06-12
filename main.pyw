@@ -9,6 +9,9 @@ import colors
 import glob
 from pypresence import Presence
 import numpy as np
+import json
+import cryptocode
+import shutil
 
 pg.init()
 
@@ -47,6 +50,8 @@ def to_time(decimal, rounding=3):
     seconds_str = f'{0 if decimal%60 < 10 else ""}{round(decimal%60, rounding)}'
     return f'{int(decimal/60)}:{seconds_str}{"0"*((3+rounding)-len(seconds_str))}'
 
+def get_class_variables(c):
+    return {key:value for key, value in c.__dict__.items() if not key.startswith('__') and not callable(key)}
 
 def continue_game():
     update_presence('Ingame', player.mode_name)
@@ -173,6 +178,14 @@ class BoardSettings:
             self.garbage_min, self.garbage_max, self.garbage_send_limit,
             self.garbage_avoidable, self.init_garbage, self.garbage_goal, self.custom_gravity
         )
+    
+    def to_dict(self):
+        return get_class_variables(self)
+    
+    def from_dict(self, d):
+        for k,v in d.items():
+            self.__dict__[k] = v
+
 
 class Button:
     def __init__(self, text, offset, size, func, args=[], text_size=21, horigin='m', vorigin='m'):
@@ -902,6 +915,25 @@ class Board:
             self.shake = 10
             play_sound('glass')
 
+    # sonic drops current tetromino
+    def sonic_drop(self):
+        # dropping piece
+        initial_pos = int(self.falling_mino.pos[1])
+        dropped = 0
+        while self.allow_drop:
+            self.drop()
+            self.calculate_drop()
+            dropped += 1
+
+        play_sound('harddrop')
+
+        # calculating width
+        self.add_fx(HardDropFX(len(self.falling_mino.width), self.falling_mino.pos[0]+self.falling_mino.width[0],initial_pos, dropped))
+        self.add_score(
+            self.board_topleft[0]+self.falling_mino.pos[0]*self.cell_size,
+            self.board_topleft[1]+self.falling_mino.pos[1]*self.cell_size,
+        dropped, self.falling_mino.color)
+
     # hard drops current tetromino
     def hard_drop(self):
         # dropping piece
@@ -1048,6 +1080,10 @@ class Board:
             # hard dropping
             if keys['hard'] == 1:
                 self.hard_drop()
+
+            # sonic dropping
+            if keys['sonic'] == 1:
+                self.sonic_drop()
 
             # rotating clockwise
             if keys['rotate_c'] == 1:
@@ -1417,6 +1453,23 @@ class Board:
                     size=40+int(f_key/3), vertical_margin='m', horizontal_margin='r'
                 )
 
+# app functions (need them here too fr fr)
+
+def read_mode(path):
+    with open(path, encoding='utf-8') as f:
+        data = f.read()
+        ddata = cryptocode.decrypt(data[8:], data[0:8])
+        return BoardSettings.from_dict(json.loads(ddata))
+    
+def write_mode(obj:BoardSettings, path='save/'):
+    with open(path, 'w', encoding='utf-8') as f:
+        key = ''.join(random.choices('1234567890qwertyuiopasdfghjklzxcvbnm', k=8))
+        data = key+cryptocode.encrypt(obj.to_dict(), key)
+        f.write(data)
+        return key
+    
+# def save_modes
+
 
 # app variables
 
@@ -1472,6 +1525,7 @@ keybinds = {
     'right': [pg.K_RIGHT],
     'soft': [pg.K_DOWN],
     'hard': [pg.K_SPACE],
+    'sonic': [],
     'forfeit': [pg.K_ESCAPE],
     'reset': [pg.K_r],
 }
