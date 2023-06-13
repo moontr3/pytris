@@ -301,10 +301,7 @@ class Button:
         hovered = self.rect.collidepoint(mouse_pos)
         max_num = 128 if hovered and mouse_press[0] else 64 if hovered else 0
 
-        if self.hover_key < max_num:
-            self.hover_key += (max_num-self.hover_key)/7
-        if self.hover_key > max_num:
-            self.hover_key -= (self.hover_key-max_num)/7
+        self.hover_key += (max_num-self.hover_key)/7
 
         if hovered and lmb_up:
             self.func(*self.args)
@@ -313,6 +310,59 @@ class Button:
         pg.draw.rect(screen, (self.hover_key,self.hover_key,self.hover_key), self.rect, border_radius=14)
         pg.draw.rect(screen, colors.transition((self.hover_key,self.hover_key,self.hover_key), (255,255,255), 0.5+self.hover_key/255/2), self.rect, 2, 14)
         draw.text(self.text, self.rect.center, size=self.text_size, horizontal_margin='m', vertical_margin='m')
+
+
+class ListLabel:
+    def __init__(self, text):
+        self.text = text
+
+    def update(self, offset):
+        draw.text(self.text, (halfx,offset), size=48, horizontal_margin='m')
+        return 80
+    
+
+class ListBar:
+    def __init__(self, text, var, var_min, var_max):
+        self.text = text
+        self.size = draw.get_text_size(text, 24)[0]
+        self.bar_size = 580-self.size
+        self.var = var
+        self.var_min = var_min
+        self.var_max = var_max
+        self.hover_key = 0
+        self.var_key = 0
+
+    def update(self, offset):
+        vars = globals()
+        var = vars[self.var]
+        percent = (self.var_key-self.var_min)/(self.var_max-self.var_min)
+
+        bar_offset = halfx-280+self.size
+        bar_rect = pg.Rect(bar_offset, offset-2, 40+self.bar_size, 28)
+        hovered = bar_rect.collidepoint(mouse_pos)
+        max_num = 128 if hovered and mouse_press[0] else 64 if hovered else 0
+
+        self.hover_key += (max_num-self.hover_key)/5
+        self.var_key += (var-self.var_key)/5
+
+        if hovered and mouse_press[0]:
+            v_percent = (mouse_pos[0]-bar_offset)/self.bar_size
+            v_var = round(v_percent*(self.var_max-self.var_min))+self.var_min
+            if v_var >= self.var_min and v_var <= self.var_max:
+                var = v_var
+                vars[self.var] = var
+
+        draw.text(self.text, (halfx-300, offset), size=24)
+
+        pg.draw.rect(screen, (0,0,0), bar_rect, 0, 14)
+        pg.draw.rect(screen, colors.transition((self.hover_key,self.hover_key,self.hover_key), (255,255,255), 0.5+self.hover_key/255/2), bar_rect, 2, 14)
+
+        rect = pg.Rect(bar_offset+percent*self.bar_size, offset-2, 40, 28)
+        pg.draw.rect(screen, (self.hover_key,self.hover_key,self.hover_key), rect, 0, 14)
+        pg.draw.rect(screen, colors.transition((self.hover_key,self.hover_key,self.hover_key), (255,255,255), 0.5+self.hover_key/255/2), rect, 2, 14)
+        draw.text(str(var), rect.center, size=16, horizontal_margin='m', vertical_margin='m')
+        
+        return 35
         
 
 
@@ -1580,12 +1630,6 @@ def save_modes():
         named.append(name)
         write_mode(i, f'modes/{name}.ptsf')
 
-def sort_boards():
-    global custom_boards
-    names = []
-    
-# def save_modes
-
 
 # app variables
 
@@ -1716,7 +1760,10 @@ overlay_elements = {
     "Piece letter": "piece_letter"
 }
 options_elements = [
-
+    ListLabel('Gameplay'),
+    ListBar('ARR', 'arr', 1, 5),
+    ListBar('DAS', 'das', 1, 20),
+    ListBar('SDF', 'sdf', 2, 40),
 ]
 menu = 'main'
 buttons = {
@@ -2074,7 +2121,7 @@ while running:
 ############## OPTIONS ##############
 
     if menu == 'options':
-        ongoing = 50
+        ongoing = 50-scroll
         for i in options_elements:
             ongoing += i.update(ongoing)
 
