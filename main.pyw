@@ -68,9 +68,13 @@ def continue_game():
 def restart():
     global player
     board = custom_boards if custom_game else boards
-    player = board[selected_board].get_board()
-    switch_menu('game')
-    update_presence('Ingame', player.mode_name)
+    try:
+        player = board[selected_board].get_board()
+    except:
+        pass
+    else:
+        switch_menu('game')
+        update_presence('Ingame', player.mode_name)
 
 def switch_menu(arg):
     global menu, finish_key, scroll, scroll_vel, boards_limit, selected_board, just_entered, update_scroll, custom_game
