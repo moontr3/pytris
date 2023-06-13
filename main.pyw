@@ -12,7 +12,12 @@ import numpy as np
 import json
 import cryptocode
 import os
+import threading
+from tkinter import Tk
+from tkinter.filedialog import askopenfilename
 
+tk = Tk()
+tk.withdraw()
 pg.init()
 
 windowx = 1280
@@ -20,6 +25,12 @@ windowy = 720
 clock = pg.time.Clock()
 fps = 60
 dfps = 0.0
+
+# some very important variables
+popups = []
+loading = 0
+loading_total = 0
+menu = 'main'
 
 screen = pg.display.set_mode((windowx,windowy), pg.RESIZABLE)
 running = True
@@ -39,9 +50,11 @@ def read_file(path):
     with open(path, encoding='utf-8') as f:
         data = f.read()
         ddata = cryptocode.decrypt(data[8:], data[0:8])
-        return ddata
+        print(ddata)
+        return json.loads(ddata)
     
 def write_file(obj, path):
+    print(obj)
     with open(path, 'w', encoding='utf-8') as f:
         key = ''.join(random.choices('1234567890qwertyuiopasdfghjklzxcvbnm', k=8))
         data = key+cryptocode.encrypt(json.dumps(obj), key)
@@ -90,32 +103,37 @@ def restart():
         switch_menu('game')
         update_presence('Ingame', player.mode_name)
 
-def switch_menu(arg):
+def switch_menu(arg, simple=False):
     global menu, finish_key, scroll, scroll_vel, boards_limit, selected_board, just_entered, update_scroll, custom_game
-    if (menu == 'custom' and arg == 'modes') or (menu == 'modes' and arg == 'custom'):
-        selected_board = 0
+    if not simple:
+        if (menu == 'custom' and arg == 'modes') or (menu == 'modes' and arg == 'custom'):
+            selected_board = 0
 
-    if arg == 'modes':
-        custom_game = False
-    elif arg == 'custom':
-        custom_game = True
+        if arg == 'modes':
+            custom_game = False
+        elif arg == 'custom':
+            custom_game = True
+
+        for i in buttons:
+            for j in buttons[i]:
+                j.reload()
 
     menu = arg
-    for i in buttons:
-        for j in buttons[i]:
-            j.reload()
+
     for i in menu_names_fx:
         i.end = True
     menu_names_fx.append(MenuName(menu_names[arg], arg))
 
-    if arg == 'pause':
-        update_presence('Paused', player.mode_name)
-    elif arg != 'game':
-        update_presence('Browsing menus')
+    if not simple:
+        if arg == 'pause':
+            update_presence('Paused', player.mode_name)
+        elif arg != 'game':
+            update_presence('Browsing menus')
 
-    finish_key = 0
-    scroll = 0
-    scroll_vel = 0
+        finish_key = 0
+        scroll = 0
+        scroll_vel = 0
+
     just_entered = 2
     update_scroll = 2
 
@@ -126,17 +144,44 @@ def new_board():
 
 def del_board():
     global custom_boards, selected_board
-    custom_boards.pop(selected_board)
-    selected_board -= 1
-    if selected_board < 0:
-        selected_board = 0
+    try:
+        custom_boards.pop(selected_board)
+    except IndexError:
+        popup('You don\'t have any boards to delete.', (60,30,30))
+    except:
+        popup('Unable to delete.', (60,30,30))
+    else:
+        selected_board -= 1
+        if selected_board < 0:
+            selected_board = 0
 
 def exit_game():
     global running
+    save_modes()
     running = False
 
-def open_custom_folder():
-    os.system(f'explorer {os.getcwd()}\\modes')
+def export_file():
+    if len(custom_boards) > 0:
+        try: os.mkdir('modes/')
+        except: pass
+        name = to_name(custom_boards[selected_board].name)
+        write_file(custom_boards[selected_board].to_dict(), f'modes\\{name}.ptsf')
+        os.system(f'explorer {os.getcwd()}\\modes')
+        popup(f'Successfully exported {custom_boards[selected_board].name}!', (30,60,30))
+    else:
+        popup('You don\'t have any boards to export.', (60,30,30))
+
+def import_file():
+    global custom_boards, selected_board
+    try:
+        file = askopenfilename()
+        data = read_file(file)
+        custom_boards.append(BoardSettings().from_dict(data))
+        selected_board = len(custom_boards)-1
+        
+        popup(f'Successfully imported {custom_boards[selected_board].name}!', (30,60,30))
+    except:
+        popup('Importing aborted.', (60,30,30))
 
 
 def yes_sure():
@@ -317,8 +362,9 @@ class Button:
 
         self.hover_key += (max_num-self.hover_key)/7
 
-        if hovered and lmb_up:
-            self.func(*self.args)
+        if hovered:
+            if lmb_up:
+                self.func(*self.args)
 
     def draw(self):
         pg.draw.rect(screen, (self.hover_key,self.hover_key,self.hover_key), self.rect, border_radius=14)
@@ -336,7 +382,7 @@ class ListLabel:
     
 
 class ListBar:
-    def __init__(self, text, var, var_min, var_max):
+    def __init__(self, text, var, var_min, var_max, rounding=None):
         self.text = text
         self.size = draw.get_text_size(text, 24)[0]
         self.bar_size = 580-self.size
@@ -344,7 +390,8 @@ class ListBar:
         self.var_min = var_min
         self.var_max = var_max
         self.hover_key = 0
-        self.var_key = 0
+        self.var_key = globals()[var]
+        self.rounding = rounding
 
     def update(self, offset):
         vars = globals()
@@ -352,7 +399,7 @@ class ListBar:
         percent = (self.var_key-self.var_min)/(self.var_max-self.var_min)
 
         bar_offset = halfx-280+self.size
-        bar_rect = pg.Rect(bar_offset, offset-2, 40+self.bar_size, 28)
+        bar_rect = pg.Rect(bar_offset, offset-2, 50+self.bar_size, 28)
         hovered = bar_rect.collidepoint(mouse_pos)
         max_num = 128 if hovered and mouse_press[0] else 64 if hovered else 0
 
@@ -360,8 +407,8 @@ class ListBar:
         self.var_key += (var-self.var_key)/5
 
         if hovered and mouse_press[0]:
-            v_percent = (mouse_pos[0]-bar_offset-20)/self.bar_size
-            v_var = round(v_percent*(self.var_max-self.var_min))+self.var_min
+            v_percent = (mouse_pos[0]-bar_offset-25)/self.bar_size
+            v_var = round(v_percent*(self.var_max-self.var_min), self.rounding)+self.var_min
             if v_var >= self.var_min and v_var <= self.var_max:
                 var = v_var
                 vars[self.var] = var
@@ -371,12 +418,20 @@ class ListBar:
         pg.draw.rect(screen, (0,0,0), bar_rect, 0, 14)
         pg.draw.rect(screen, colors.transition((self.hover_key,self.hover_key,self.hover_key), (255,255,255), 0.5+self.hover_key/255/2), bar_rect, 2, 14)
 
-        rect = pg.Rect(bar_offset+percent*self.bar_size, offset-2, 40, 28)
+        rect = pg.Rect(bar_offset+percent*self.bar_size, offset-2, 50, 28)
         pg.draw.rect(screen, (self.hover_key,self.hover_key,self.hover_key), rect, 0, 14)
         pg.draw.rect(screen, colors.transition((self.hover_key,self.hover_key,self.hover_key), (255,255,255), 0.5+self.hover_key/255/2), rect, 2, 14)
         draw.text(str(var), rect.center, size=16, horizontal_margin='m', vertical_margin='m')
         
         return 35
+    
+
+class ListSeparator:
+    def __init__(self, size):
+        self.size = size
+
+    def update(self, *args):
+        return self.size
         
 
 
@@ -1035,7 +1090,7 @@ class Board:
         self.just_held = False
         self.next()
         if len(self.pieces) != 0:
-            self.pieces.append(self.frames-self.pieces[-1])
+            self.pieces.append(self.frames-sum(self.pieces))
         else:
             self.pieces.append(self.frames)
         self.stats['Pieces placed'] += 1
@@ -1605,45 +1660,50 @@ class Board:
                 )
 
 # app functions (need them here too fr fr)
+    
+def load_modes_t():
+    global custom_boards, selected_board, loading, loading_total, menu
 
-def read_mode(path):
-    ddata = read_file(path)
-    return BoardSettings().from_dict(json.loads(ddata))
-    
-def write_mode(obj:BoardSettings, path):
-    with open(path, 'w', encoding='utf-8') as f:
-        key = ''.join(random.choices('1234567890qwertyuiopasdfghjklzxcvbnm', k=8))
-        data = key+cryptocode.encrypt(json.dumps(obj.to_dict()), key)
-        f.write(data)
-        return key
-    
-def write_mode(obj:BoardSettings, path):
-    write_file(obj.to_dict(), path)
-    
-def load_modes():
-    global custom_boards, selected_board
+    old_menu = str(menu)
+    loading = 0
+    loading_total = 1
+    switch_menu('loading', True)
+
     selected_board = 0
     custom_boards = []
-    files = glob.glob('modes/*.ptsf')
-    files.sort()
-    for i in files:
-        custom_boards.append(read_mode(i))
+    try:
+        data = read_file('save/modes.ptsf')
+    except:
+        data = {'modes': []}
+        write_file({'modes': []}, 'save/modes.ptsf')
+    print(data)
+    for i in data['modes']:
+        custom_boards.append(BoardSettings().from_dict(i))
+
+    switch_menu(old_menu, True)
+    popup(f'Loaded {len(custom_boards)} scenarios', (30,60,30))
+
+def load_modes():
+    threading.Thread(target=load_modes_t).start()
+
+def save_modes_t():
+    global loading, loading_total, menu
+
+    old_menu = str(menu)
+    switch_menu('loading', True)
+    loading = 0
+    loading_total = len(custom_boards)
+
+    modes = {
+        'modes': [i.to_dict() for i in custom_boards]
+    }
+    write_file(modes, 'save/modes.ptsf')
+        
+    switch_menu(old_menu, True)
+    popup(f'Saved {len(custom_boards)} scenarios', (30,60,30))
 
 def save_modes():
-    for i in glob.glob('modes/*.ptsf'):
-        os.remove(i)
-    named = []
-    for i in custom_boards:
-        name = to_name(i.name)
-        name_index = 0
-        while name in named:
-            name_index += 1
-            if name_index <= 1:
-                name = name+f'-{name_index}'
-            else:
-                name = name[0:-len(str(name_index))]+f'{name_index}'
-        named.append(name)
-        write_mode(i, f'modes/{name}.ptsf')
+    threading.Thread(target=save_modes_t).start()
 
 
 # app variables
@@ -1678,9 +1738,10 @@ boards = [
     BoardSettings('Dig 40L', goal_type='lines', goal=40, garbage=True, garbage_min=1,garbage_max=1, garbage_send_limit=10, garbage_avoidable=False, init_garbage=[1 for i in range(10)], garbage_goal=True),
     BoardSettings('Dig5 40L', goal_type='lines', goal=40, garbage=True, garbage_min=1,garbage_max=1, garbage_send_limit=5, garbage_avoidable=False, init_garbage=[1 for i in range(5)], garbage_goal=True),
     BoardSettings('Freeroam Dig', garbage=True, garbage_min=1,garbage_max=1, garbage_send_limit=10, garbage_avoidable=False, init_garbage=[1 for i in range(10)]),
+    BoardSettings('Big 40L', 5,10,goal_type='lines', goal=40),
+    BoardSettings('Big 20L', 5,10,goal_type='lines', goal=20),
 ]
 selected_board = 0
-load_modes()
 keybinds = {
     'pause': [pg.K_ESCAPE, pg.K_F1],
     'hold': [pg.K_LSHIFT,pg.K_RSHIFT,pg.K_c],
@@ -1746,13 +1807,13 @@ line_clear_stat_keys = [
     'Tetrises'
 ]
 
-popups = []
 end_screen_fx = []
 menu_names_fx = [MenuName('pytris','main')]
 arr = 2
 das = 8
 sdf = 20
 bg_dim = 0.7
+bg_speed = 1
 board_size = 30
 grid_brightness = 128
 presence = True
@@ -1779,8 +1840,13 @@ options_elements = [
     ListBar('ARR', 'arr', 1, 5),
     ListBar('DAS', 'das', 1, 20),
     ListBar('SDF', 'sdf', 2, 40),
+
+    ListSeparator(30),
+
+    ListLabel('Style'),
+    ListBar('BG dim', 'bg_dim', 0,1, 2),
+    ListBar('BG color change speed', 'bg_speed', 0.5,5, 1),
 ]
-menu = 'main'
 buttons = {
     "main": [
         Button('Play', (0,-40), (300,60), switch_menu, ['modes'], 24),
@@ -1820,7 +1886,8 @@ buttons = {
         Button('Load', (-20,-240), (95,50), are_you_sure, [SurePopup(
             ['Are you sure you want to load scenarios?','All unsaved changes will be overwritten!'],
         load_modes, 'custom', True)], 18, 'r','b'),
-        Button('Open folder', (-20,-300), (200,50), open_custom_folder, [], 18, 'r','b'),
+        Button('↑', (-20,-300), (200,50), export_file, [], 24, 'r','b'),
+        Button('↓', (-125,-300), (200,50), import_file, [], 24, 'r','b'),
         Button('+', (-162,-360), (58,50), new_board, [], 26, 'r','b'),
         Button('×', (-91,-360), (58,50), are_you_sure, [SurePopup(
             ['Are you sure you want to delete a custom board?','This action cannot be undone!'],
@@ -1830,7 +1897,8 @@ buttons = {
     "sure": {
         Button('Yes, sure', (0,50), (300,60), yes_sure, [], 24),
         Button('No, take me back!', (0,130), (300,60), no_take_me_back, [], 24),
-    }
+    },
+    "loading": {}
 }
 menu_names = {
     "main": "pytris",
@@ -1841,7 +1909,8 @@ menu_names = {
     "custom": "custom",
     "options": "options",
     "game": "",
-    "sure": "sure?"
+    "sure": "sure?",
+    "loading": "loading"
 }
 menu_names_offsets = {
     "main":0,
@@ -1853,7 +1922,8 @@ menu_names_offsets = {
     "options":0,
     "handling":0,
     "custom":0,
-    "sure":0
+    "sure":0,
+    "loading":0,
 }
 scrolling_supported = [
     'options',
@@ -1879,12 +1949,16 @@ sure_popup: SurePopup = None
 
 # preparing
 
+load_modes()
+
 if presence:
     try:
         RPC = Presence(client_id)
         RPC.connect()
     except:
         popup('Failed connecting to Discord', (60,30,30))
+else:
+    popup('Presence disabled')
 
 
 
@@ -1902,6 +1976,7 @@ while running:
     just_pressed = []
     hotkey_pressed = False
     lmb_up = False
+    lmb_down = False
     mouse_wheel = 0
 
 
@@ -1910,7 +1985,7 @@ while running:
 
     for event in events:
         if event.type == pg.QUIT:
-            running = False 
+            exit_game()
 
         if event.type == pg.VIDEORESIZE:
             windowx = event.w
@@ -1935,6 +2010,10 @@ while running:
         if event.type == pg.MOUSEBUTTONUP:
             if event.button == 1:
                 lmb_up = True
+
+        if event.type == pg.MOUSEBUTTONDOWN:
+            if event.button == 1:
+                lmb_down = True
 
         if event.type == pg.KEYDOWN:
             just_pressed.append(event.key)
@@ -1965,7 +2044,7 @@ while running:
     )
     screen.fill(bg_color)
     
-    bg_color_key += 1
+    bg_color_key += bg_speed
 
     if bg_color_key > 255:
         bg_color_base += 1
@@ -2149,6 +2228,15 @@ while running:
 
     if menu == 'sure':
         sure_popup.draw()
+
+
+
+############## LOADING BAR ##############
+
+    if menu == 'loading':
+        percent = loading/loading_total
+        pg.draw.rect(screen, (255,255,255), (halfx-300, halfy, percent*600, 4), 0, 2)
+        pg.draw.rect(screen, (255,255,255), (halfx-300, halfy, 600, 4), 1, 2)
 
 
 
