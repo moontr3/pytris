@@ -591,6 +591,7 @@ class Board:
             'Doubles': 0,
             'Triples': 0,
             'Tetrises': 0,
+            'Perfect clears': 0,
             'T-Spins': 0,
             'Mini T-Spins': 0,
         }
@@ -632,8 +633,6 @@ class Board:
         self.lowest = -2
         self.lines = 0
         self.combo = -1
-        self.combo_key = 0
-        self.btb_key = 0
 
         self.garbage_enabled = garbage
         self.garbage = 0
@@ -667,6 +666,7 @@ class Board:
         self.ex_warning = False
         self.ex_warning_fxs = []
         self.ex_warning_timeout = 0
+        self.ex_warning_sound_timeout = 0
 
         self.held = None
         self.just_held = False
@@ -697,10 +697,13 @@ class Board:
     def add_btb(self, x,y, action_score):
         self.btb += 1
         if self.btb > 0:
+            play_sound('b2b',0.8)
             self.add_score(x, y, action_score//2, (255,255,0), 24)
 
     # resets back-to-back
     def reset_btb(self):
+        if self.btb > 0:
+            play_sound('b2b_lost',0.65)
         self.btb = -1
 
     # checks if current piece has been t-spun
@@ -867,7 +870,9 @@ class Board:
         btb_added = False
         if len(cleared_lines) != 0:
             self.combo += 1
-            self.combo_key = 20
+            if self.combo > 0:
+                play_sound(f'combo{min(4,self.combo)}', 0.85)
+            play_sound(f'lines{len(cleared_lines)}')
             self.add_fx(ActionFX(line_clear_titles[len(cleared_lines)-1]))
 
             if tspin and not mini_tspin:
@@ -906,6 +911,8 @@ class Board:
                 score = pc_pts[len(cleared_lines)+int(self.btb > 0)]*(self.level+1)
                 self.add_score(center_x, center_y, score, (255,255,255), 36)
                 self.add_btb(center_x, center_y, score)
+                play_sound('pc', 0.85)
+                self.stats['Perfect clears'] += 1
 
         else:
             self.combo = -1
@@ -950,6 +957,7 @@ class Board:
             self.lowest = self.falling_mino.pos[1]
             self.calculate_drop()
             self.drop()
+        play_sound('hold', 0.7)
             
 
     # stops the current tetromino and places it on the board
@@ -1273,9 +1281,16 @@ class Board:
 
             if self.ex_warning:
                 self.ex_warning_timeout -= 1
+                self.ex_warning_sound_timeout -= 1
                 if self.ex_warning_timeout <= 0:
                     self.ex_warning_timeout = 20
                     self.ex_warning_fxs.append(ExWarningFX())
+                if self.ex_warning_sound_timeout <= 0:
+                    self.ex_warning_sound_timeout = 75
+                    play_sound('warning')
+            else:
+                self.ex_warning_timeout = 0
+                self.ex_warning_sound_timeout = 0
 
         # grid
         self.warning_key = self.warning_key+(int(self.warning)-self.warning_key)/20
