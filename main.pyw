@@ -11,7 +11,7 @@ from pypresence import Presence
 import numpy as np
 import json
 import cryptocode
-import shutil
+import os
 
 pg.init()
 
@@ -50,6 +50,14 @@ def to_time(decimal, rounding=3):
     seconds_str = f'{0 if decimal%60 < 10 else ""}{round(decimal%60, rounding)}'
     return f'{int(decimal/60)}:{seconds_str}{"0"*((3+rounding)-len(seconds_str))}'
 
+def to_name(string):
+    string = list(string.replace(' ','-').lower())
+    for i in range(len(string)):
+        if string[i] not in 'qwertyuiopasdfghjklzxcvbnm1234567890-':
+            string[i] = None
+    return ''.join([i for i in string if i != None])
+
+
 def get_class_variables(c):
     return {key:value for key, value in c.__dict__.items() if not key.startswith('__') and not callable(key)}
 
@@ -77,7 +85,7 @@ def switch_menu(arg):
     menu = arg
     for i in buttons:
         for j in buttons[i]:
-            j.hover_key = 0
+            j.reload()
     for i in menu_names_fx:
         i.end = True
     menu_names_fx.append(MenuName(menu_names[arg], arg))
@@ -93,9 +101,36 @@ def switch_menu(arg):
     just_entered = 2
     update_scroll = 2
 
+def new_board():
+    global custom_boards, selected_board
+    custom_boards.append(BoardSettings('New Board'))
+    selected_board = len(custom_boards)-1
+
+def del_board():
+    global custom_boards, selected_board
+    custom_boards.pop(selected_board)
+    selected_board -= 1
+    if selected_board < 0:
+        selected_board = 0
+
 def exit_game():
     global running
     running = False
+
+def open_custom_folder():
+    os.system(f'explorer {os.getcwd()}\\modes')
+
+
+def yes_sure():
+    sure_popup.sure()
+
+def no_take_me_back():
+    sure_popup.not_sure()
+
+def are_you_sure(obj):
+    global sure_popup
+    sure_popup = obj
+    switch_menu('sure')
 
 
 def play_sound(key, volume=1.0):
@@ -180,11 +215,39 @@ class BoardSettings:
         )
     
     def to_dict(self):
-        return get_class_variables(self)
+        vars = get_class_variables(self)
+        cur_list = self.minoes
+        vars['minoes'] = [i.to_dict() for i in cur_list]
+        return vars
     
     def from_dict(self, d):
         for k,v in d.items():
             self.__dict__[k] = v
+
+        self.minoes = [blocks.Mino().from_dict(i) for i in self.minoes]
+        return self
+    
+
+class SurePopup:
+    def __init__(self, lines, func, menu, switch_on_success=False):
+        self.lines = lines
+        self.func = func
+        self.menu = menu
+        self.switch_on_success = switch_on_success
+
+    def draw(self):
+        ongoing = halfy-50-len(self.lines)*30
+        for i in self.lines:
+            draw.text(i, (halfx,ongoing), size=24, horizontal_margin='m')
+            ongoing += 30
+
+    def sure(self):
+        self.func()
+        if self.switch_on_success:
+            switch_menu(self.menu)
+
+    def not_sure(self):
+        switch_menu(self.menu)
 
 
 class Button:
@@ -198,6 +261,9 @@ class Button:
         self.text = text
         self.func = func
         self.text_size = text_size
+        self.hover_key = 0
+
+    def reload(self):
         self.hover_key = 0
 
     def resize(self):
@@ -1055,7 +1121,9 @@ class Board:
                 self.drop_frames = 0 
 
             gravity = (drop_timers[self.level] if self.custom_gravity == None else self.custom_gravity)
-            if int((keys['soft']+1)%(gravity/sdf)) == 0 and keys['soft'] != 0:
+            try: gravity_key = (keys['soft']+1)%int(gravity/sdf)
+            except: gravity_key = 0
+            if gravity_key == 0 and keys['soft'] != 0:
                 self.drop(True)
                 self.calculate_drop()
             while self.drop_frames >= gravity and self.allow_drop:
@@ -1459,14 +1527,43 @@ def read_mode(path):
     with open(path, encoding='utf-8') as f:
         data = f.read()
         ddata = cryptocode.decrypt(data[8:], data[0:8])
-        return BoardSettings.from_dict(json.loads(ddata))
+        return BoardSettings().from_dict(json.loads(ddata))
     
-def write_mode(obj:BoardSettings, path='save/'):
+def write_mode(obj:BoardSettings, path):
     with open(path, 'w', encoding='utf-8') as f:
         key = ''.join(random.choices('1234567890qwertyuiopasdfghjklzxcvbnm', k=8))
-        data = key+cryptocode.encrypt(obj.to_dict(), key)
+        data = key+cryptocode.encrypt(json.dumps(obj.to_dict()), key)
         f.write(data)
         return key
+    
+def load_modes():
+    global custom_boards, selected_board
+    selected_board = 0
+    custom_boards = []
+    files = glob.glob('modes/*.ptsf')
+    files.sort()
+    for i in files:
+        custom_boards.append(read_mode(i))
+
+def save_modes():
+    for i in glob.glob('modes/*.ptsf'):
+        os.remove(i)
+    named = []
+    for i in custom_boards:
+        name = to_name(i.name)
+        name_index = 0
+        while name in named:
+            name_index += 1
+            if name_index <= 1:
+                name = name+f'-{name_index}'
+            else:
+                name = name[0:-len(str(name_index))]+f'{name_index}'
+        named.append(name)
+        write_mode(i, f'modes/{name}.ptsf')
+
+def sort_boards():
+    global custom_boards
+    names = []
     
 # def save_modes
 
@@ -1505,17 +1602,7 @@ boards = [
     BoardSettings('Freeroam Dig', garbage=True, garbage_min=1,garbage_max=1, garbage_send_limit=10, garbage_avoidable=False, init_garbage=[1 for i in range(10)]),
 ]
 selected_board = 0
-custom_boards = [
-    BoardSettings('level 7 no death',death=False, def_level=7, ),
-    BoardSettings('level 15 no death',death=False, def_level=15, ),
-    BoardSettings('1s test', goal_type='time', goal=1),
-    BoardSettings('2s test die', goal_type='time', goal=2, death=False),
-    BoardSettings('2s no level increase', goal_type='time', goal=2, level_increase=False),
-    BoardSettings('3s test die garbage', goal_type='time', goal=2, death=False, garbage=True, garbage_min=5, garbage_max=5, ),
-    BoardSettings('2s no level increase die', goal_type='time', goal=2, level_increase=False, death=False),
-    BoardSettings('20G test', custom_gravity=0),
-    BoardSettings('20G test 5l', custom_gravity=0, goal_type='time', goal=5),
-]
+load_modes()
 keybinds = {
     'pause': [pg.K_ESCAPE, pg.K_F1],
     'hold': [pg.K_LSHIFT,pg.K_RSHIFT,pg.K_c],
@@ -1612,11 +1699,12 @@ overlay_elements = {
 options_elements = [
 
 ]
+menu = 'main'
 buttons = {
     "main": [
         Button('Play', (0,-40), (300,60), switch_menu, ['modes'], 24),
         Button('Options', (0,40), (300,60), switch_menu, ['options'], 24),
-        Button('Exit game', (0,120), (300,60), exit_game, [], 24)
+        Button('Exit game', (0,120), (300,60), are_you_sure, [SurePopup(['Are you sure you want to exit the game?'], exit_game, 'main')], 24)
     ],
     "game": [
         Button('Pause', (20,20), (75,40), switch_menu, ['pause'], 16, 'l','t'),
@@ -1646,7 +1734,21 @@ buttons = {
     "custom": {
         Button('Start', (-20,-20), (200,90), restart, [], 26, 'r','b'),
         Button('Back', (-20,-120), (200,50), switch_menu, ['main'], 18, 'r','b'),
-        Button('Built-in', (-20,-180), (200,50), switch_menu, ['modes'], 18, 'r','b')
+        Button('Built-in', (-20,-180), (200,50), switch_menu, ['modes'], 18, 'r','b'),
+        Button('Save', (-125,-240), (95,50), save_modes, [], 18, 'r','b'),
+        Button('Load', (-20,-240), (95,50), are_you_sure, [SurePopup(
+            ['Are you sure you want to load scenarios?','All unsaved changes will be overwritten!'],
+        load_modes, 'custom', True)], 18, 'r','b'),
+        Button('Open folder', (-20,-300), (200,50), open_custom_folder, [], 18, 'r','b'),
+        Button('+', (-162,-360), (58,50), new_board, [], 26, 'r','b'),
+        Button('×', (-91,-360), (58,50), are_you_sure, [SurePopup(
+            ['Are you sure you want to delete a custom board?','This action cannot be undone!'],
+        del_board, 'custom', True)], 26, 'r','b'),
+        Button('⋯', (-20,-360), (58,50), new_board, [], 26, 'r','b'),
+    },
+    "sure": {
+        Button('Yes, sure', (0,50), (300,60), yes_sure, [], 24),
+        Button('No, take me back!', (0,130), (300,60), no_take_me_back, [], 24),
     }
 }
 menu_names = {
@@ -1657,7 +1759,8 @@ menu_names = {
     "pause": "paused",
     "custom": "custom",
     "options": "options",
-    "game": ""
+    "game": "",
+    "sure": "sure?"
 }
 menu_names_offsets = {
     "main":0,
@@ -1668,7 +1771,8 @@ menu_names_offsets = {
     "game":0,
     "options":0,
     "handling":0,
-    "custom":0
+    "custom":0,
+    "sure":0
 }
 scrolling_supported = [
     'options',
@@ -1688,8 +1792,8 @@ bg_colors = [
 bg_color_key = 0
 bg_color_base = 0
 
-menu = 'main'
 player: Board = None
+sure_popup: SurePopup = None
 
 
 # preparing
@@ -1889,7 +1993,7 @@ while running:
             switch_menu('lose')
             update_presence('Lost', player.mode_name)
         if player.forfeited and player.death_key > 50:
-            switch_menu('modes')
+            switch_menu('modes' if not custom_game else 'custom')
         if player.win_key > 120:
             switch_menu('finish')
 
@@ -1960,14 +2064,18 @@ while running:
 
 
 
+############## SURE POPUP ##############
+
+    if menu == 'sure':
+        sure_popup.draw()
+
+
+
 ############## BUTTONS ##############
 
-    try:
-        for i in buttons[menu]:
-            i.draw()
-            i.update()
-    except:
-        pass
+    for i in buttons[menu]:
+        i.draw()
+        i.update()
 
 
 

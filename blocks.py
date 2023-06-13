@@ -1,9 +1,21 @@
+
+def get_class_variables(c):
+    return {key:value for key, value in c.__dict__.items() if not key.startswith('__') and not callable(key)}
+
 class Mino:
-    def __init__(self, letter):
-        self.letter = letter
+    def __init__(self, letter='garbage'):
         self.color = mino_colors[letter]
+        self.letter = letter
         self.rotation = 0
         self.pos = positions[letter][self.rotation]
+    
+    def to_dict(self):
+        return get_class_variables(self)
+    
+    def from_dict(self, d):
+        for k,v in d.items():
+            self.__dict__[k] = v
+        return self
 
 mino_colors = {
     'o': (240,240,50),
