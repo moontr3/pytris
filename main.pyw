@@ -35,6 +35,20 @@ sfx = {'.'.join(i.removeprefix('res\\sfx\\').split('.')[0:-1]): pg.mixer.Sound(i
 
 # app functions
 
+def read_file(path):
+    with open(path, encoding='utf-8') as f:
+        data = f.read()
+        ddata = cryptocode.decrypt(data[8:], data[0:8])
+        return ddata
+    
+def write_file(obj, path):
+    with open(path, 'w', encoding='utf-8') as f:
+        key = ''.join(random.choices('1234567890qwertyuiopasdfghjklzxcvbnm', k=8))
+        data = key+cryptocode.encrypt(json.dumps(obj), key)
+        f.write(data)
+        return key
+    
+
 def update_presence(line1, line2=None):
     if presence:
         try:
@@ -346,7 +360,7 @@ class ListBar:
         self.var_key += (var-self.var_key)/5
 
         if hovered and mouse_press[0]:
-            v_percent = (mouse_pos[0]-bar_offset)/self.bar_size
+            v_percent = (mouse_pos[0]-bar_offset-20)/self.bar_size
             v_var = round(v_percent*(self.var_max-self.var_min))+self.var_min
             if v_var >= self.var_min and v_var <= self.var_max:
                 var = v_var
@@ -1593,10 +1607,8 @@ class Board:
 # app functions (need them here too fr fr)
 
 def read_mode(path):
-    with open(path, encoding='utf-8') as f:
-        data = f.read()
-        ddata = cryptocode.decrypt(data[8:], data[0:8])
-        return BoardSettings().from_dict(json.loads(ddata))
+    ddata = read_file(path)
+    return BoardSettings().from_dict(json.loads(ddata))
     
 def write_mode(obj:BoardSettings, path):
     with open(path, 'w', encoding='utf-8') as f:
@@ -1604,6 +1616,9 @@ def write_mode(obj:BoardSettings, path):
         data = key+cryptocode.encrypt(json.dumps(obj.to_dict()), key)
         f.write(data)
         return key
+    
+def write_mode(obj:BoardSettings, path):
+    write_file(obj.to_dict(), path)
     
 def load_modes():
     global custom_boards, selected_board
