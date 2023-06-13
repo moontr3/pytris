@@ -50,11 +50,9 @@ def read_file(path):
     with open(path, encoding='utf-8') as f:
         data = f.read()
         ddata = cryptocode.decrypt(data[8:], data[0:8])
-        print(ddata)
         return json.loads(ddata)
     
-def write_file(obj, path):
-    print(obj)
+def write_file(obj, path): 
     with open(path, 'w', encoding='utf-8') as f:
         key = ''.join(random.choices('1234567890qwertyuiopasdfghjklzxcvbnm', k=8))
         data = key+cryptocode.encrypt(json.dumps(obj), key)
@@ -182,6 +180,22 @@ def import_file():
         popup(f'Successfully imported {custom_boards[selected_board].name}!', (30,60,30))
     except:
         popup('Importing aborted.', (60,30,30))
+
+def move_up():
+    global selected_board, custom_boards
+    if selected_board > 0:
+        object = custom_boards[selected_board]
+        custom_boards.pop(selected_board)
+        selected_board -= 1
+        custom_boards.insert(selected_board, object)
+
+def move_down():
+    global selected_board, custom_boards
+    if selected_board < len(custom_boards)-1:
+        object = custom_boards[selected_board]
+        custom_boards.pop(selected_board)
+        selected_board += 1
+        custom_boards.insert(selected_board, object)
 
 
 def yes_sure():
@@ -1675,12 +1689,13 @@ def load_modes_t():
         data = read_file('save/modes.ptsf')
     except:
         data = {'modes': []}
+        if not os.path.exists('save/'):
+            os.mkdir('save/')
         write_file({'modes': []}, 'save/modes.ptsf')
-    print(data)
     for i in data['modes']:
         custom_boards.append(BoardSettings().from_dict(i))
 
-    switch_menu(old_menu, True)
+    switch_menu(old_menu if old_menu != 'sure' else 'custom', True)
     popup(f'Loaded {len(custom_boards)} scenarios', (30,60,30))
 
 def load_modes():
@@ -1886,13 +1901,15 @@ buttons = {
         Button('Load', (-20,-240), (95,50), are_you_sure, [SurePopup(
             ['Are you sure you want to load scenarios?','All unsaved changes will be overwritten!'],
         load_modes, 'custom', True)], 18, 'r','b'),
-        Button('↑', (-20,-300), (200,50), export_file, [], 24, 'r','b'),
-        Button('↓', (-125,-300), (200,50), import_file, [], 24, 'r','b'),
-        Button('+', (-162,-360), (58,50), new_board, [], 26, 'r','b'),
-        Button('×', (-91,-360), (58,50), are_you_sure, [SurePopup(
+        Button('Export', (-20,-300), (95,50), export_file, [], 18, 'r','b'),
+        Button('Import', (-125,-300), (95,50), import_file, [], 18, 'r','b'),
+        Button('+', (-190,-360), (30,30), new_board, [], 26, 'r','b'),
+        Button('×', (-147,-360), (30,30), are_you_sure, [SurePopup(
             ['Are you sure you want to delete a custom board?','This action cannot be undone!'],
         del_board, 'custom', True)], 26, 'r','b'),
-        Button('⋯', (-20,-360), (58,50), new_board, [], 26, 'r','b'),
+        Button('⋯', (-105,-360), (30,30), new_board, [], 26, 'r','b'),
+        Button('↓', (-62,-360), (30,30), move_down, [], 26, 'r','b'),
+        Button('↑', (-20,-360), (30,30), move_up, [], 26, 'r','b'),
     },
     "sure": {
         Button('Yes, sure', (0,50), (300,60), yes_sure, [], 24),
