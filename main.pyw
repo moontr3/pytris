@@ -424,9 +424,10 @@ class ListBar:
         if hovered and mouse_press[0]:
             v_percent = (mouse_pos[0]-bar_offset-25)/self.bar_size
             v_var = round(v_percent*(self.var_max-self.var_min), self.rounding)+self.var_min
-            if v_var >= self.var_min and v_var <= self.var_max:
-                var = v_var
-                vars[self.var] = var
+            v_var = min(v_var, self.var_max)
+            v_var = max(v_var, self.var_min)
+            var = v_var
+            vars[self.var] = var
 
         draw.text(self.text, (halfx-300, offset), size=24)
 
@@ -1850,7 +1851,10 @@ overlay_elements = {
     "Blocks": "blocks_on_board",
     "Piece position": "piece_pos",
     "Piece blocks": "piece_blocks",
-    "Piece letter": "piece_letter"
+    "Piece letter": "piece_letter",
+    "Built-in modes": "boards_len",
+    "Custom modes": "cboards_len",
+    "Loading progress": "loading_prog",
 }
 options_elements = [
     ListLabel('Gameplay'),
@@ -2308,6 +2312,9 @@ while running:
 
     if debug_overlay:
         popups_len = len(popups)
+        boards_len = len(boards)
+        cboards_len = len(custom_boards)
+        loading_prog = f'{loading}/{loading_total} {round(loading/loading_total*100, 1)}'
 
         if player != None:
             blocks_on_board = len(player.blocks)
@@ -2330,18 +2337,18 @@ while running:
         var = globals()
 
         for i in overlay_elements:
-            draw.text(f'{i}: {var[overlay_elements[i]]}', (4,ongoing+1), (0,0,0), 13, 'sys', antialias=False)
-            draw.text(f'{i}: {var[overlay_elements[i]]}', (4,ongoing-1), (0,0,0), 13, 'sys', antialias=False)
-            draw.text(f'{i}: {var[overlay_elements[i]]}', (6,ongoing+1), (0,0,0), 13, 'sys', antialias=False)
-            draw.text(f'{i}: {var[overlay_elements[i]]}', (6,ongoing-1), (0,0,0), 13, 'sys', antialias=False)
+            draw.text(f'{i}: {var[overlay_elements[i]]}', (4,ongoing+1), (0,0,0), 8, 'sys', antialias=False)
+            draw.text(f'{i}: {var[overlay_elements[i]]}', (4,ongoing-1), (0,0,0), 8, 'sys', antialias=False)
+            draw.text(f'{i}: {var[overlay_elements[i]]}', (6,ongoing+1), (0,0,0), 8, 'sys', antialias=False)
+            draw.text(f'{i}: {var[overlay_elements[i]]}', (6,ongoing-1), (0,0,0), 8, 'sys', antialias=False)
             
-            draw.text(f'{i}: {var[overlay_elements[i]]}', (4,ongoing), (0,0,0), 13, 'sys', antialias=False)
-            draw.text(f'{i}: {var[overlay_elements[i]]}', (6,ongoing), (0,0,0), 13, 'sys', antialias=False)
-            draw.text(f'{i}: {var[overlay_elements[i]]}', (5,ongoing+1), (0,0,0), 13, 'sys', antialias=False)
-            draw.text(f'{i}: {var[overlay_elements[i]]}', (5,ongoing-1), (0,0,0), 13, 'sys', antialias=False)
+            draw.text(f'{i}: {var[overlay_elements[i]]}', (4,ongoing), (0,0,0), 8, 'sys', antialias=False)
+            draw.text(f'{i}: {var[overlay_elements[i]]}', (6,ongoing), (0,0,0), 8, 'sys', antialias=False)
+            draw.text(f'{i}: {var[overlay_elements[i]]}', (5,ongoing+1), (0,0,0), 8, 'sys', antialias=False)
+            draw.text(f'{i}: {var[overlay_elements[i]]}', (5,ongoing-1), (0,0,0), 8, 'sys', antialias=False)
 
-            draw.text(f'{i}: {var[overlay_elements[i]]}', (5,ongoing), size=13, style='sys', antialias=False)
-            ongoing += 15
+            draw.text(f'{i}: {var[overlay_elements[i]]}', (5,ongoing), size=8, style='sys', antialias=False)
+            ongoing += 10
             
 
 
