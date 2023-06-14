@@ -1041,7 +1041,7 @@ class Board:
 
             if len(self.blocks) == 0:
                 btb_added = True
-                score = pc_pts[len(cleared_lines)+int(self.btb > 0)]*(self.level+1)
+                score = pc_pts[len(cleared_lines)-1+int(self.btb > 0)]*(self.level+1)
                 self.add_score(center_x, center_y, score, (255,255,255), 36)
                 self.add_btb(center_x, center_y, score)
                 play_sound('pc', 0.85)
