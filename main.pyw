@@ -210,9 +210,10 @@ def are_you_sure(obj):
     switch_menu('sure')
 
 
-def play_sound(key, volume=1.0):
+def play_sound(key, vol=1.0):
+    global volume
     channel = pg.mixer.find_channel(True)
-    sfx[key].set_volume(volume)
+    sfx[key].set_volume(vol*volume/100)
     channel.stop()
     channel.play(sfx[key])
 
@@ -1829,6 +1830,7 @@ das = 8
 sdf = 20
 bg_dim = 0.7
 bg_speed = 1
+volume = 100
 board_size = 30
 grid_brightness = 128
 presence = True
@@ -1855,6 +1857,7 @@ options_elements = [
     ListBar('ARR', 'arr', 1, 5),
     ListBar('DAS', 'das', 1, 20),
     ListBar('SDF', 'sdf', 2, 40),
+    ListBar('Volume', 'volume', 0, 100),
 
     ListSeparator(30),
 
