@@ -408,7 +408,7 @@ class ListBar:
         self.var_min = var_min
         self.var_max = var_max
         self.hover_key = 0
-        self.var_key = globals()[var]
+        self.var_key = var_min
         self.rounding = rounding
 
     def update(self, offset):
@@ -1678,7 +1678,7 @@ class Board:
                     size=40+int(f_key/3), vertical_margin='m', horizontal_margin='r'
                 )
 
-# app functions (need them here too fr fr)
+# save functions
     
 def load_modes(show_popup=True):
     global custom_boards, selected_board
@@ -1706,7 +1706,28 @@ def save_modes(show_popup=True):
         popup(f'Saved {len(custom_boards)} scenarios', (30,60,30))
 
 
+def load_settings():
+    data = read_file('save/settings.ptsf')
+    vars = globals()
+    for i in data:
+        vars[i] = data[i]
+
+def save_settings():
+    vars = globals()
+    data = {i:vars[i] for i in vars if i in settings_vars}
+    write_file(data, 'save/settings.ptsf')
+
+
 # app variables
+
+settings_vars = [
+    'arr',
+    'das',
+    'sdf',
+    'volume',
+    'bg_dim',
+    'bg_speed'
+]
 
 m123 = [
     blocks.Mino('i3'),
@@ -1882,6 +1903,7 @@ buttons = {
     ],
     "options": {
         Button('Back', (20,20), (100,50), switch_menu, ['main'], 18, 'l','t'),
+        Button('Save', (140,20), (100,50), save_settings, [], 18, 'l','t'),
     },
     "custom": {
         Button('Start', (-20,-20), (200,90), restart, [], 26, 'r','b'),
@@ -1956,7 +1978,12 @@ sure_popup: SurePopup = None
 
 # preparing
 
-load_modes()
+load_modes(False)
+
+try:
+    load_settings()
+except:
+    save_settings()
 
 if presence:
     try:
@@ -2297,7 +2324,10 @@ while running:
         popups_len = len(popups)
         boards_len = len(boards)
         cboards_len = len(custom_boards)
-        loading_prog = f'{loading}/{loading_total} {round(loading/loading_total*100, 1)}'
+        try:
+            loading_prog = f'{loading}/{loading_total} {round(loading/loading_total*100, 1)}'
+        except:
+            loading_prog = f'{loading}/{loading_total}'
 
         if player != None:
             blocks_on_board = len(player.blocks)
