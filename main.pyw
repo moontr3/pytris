@@ -178,6 +178,7 @@ def import_file():
         selected_board = len(custom_boards)-1
         
         popup(f'Successfully imported {custom_boards[selected_board].name}!', (30,60,30))
+        save_modes(False)
     except:
         popup('Importing aborted.', (60,30,30))
 
@@ -188,6 +189,7 @@ def move_up():
         custom_boards.pop(selected_board)
         selected_board -= 1
         custom_boards.insert(selected_board, object)
+    save_modes(False)
 
 def move_down():
     global selected_board, custom_boards
@@ -196,6 +198,7 @@ def move_down():
         custom_boards.pop(selected_board)
         selected_board += 1
         custom_boards.insert(selected_board, object)
+    save_modes(False)
 
 
 def yes_sure():
@@ -242,7 +245,7 @@ class Popup:
 
     def draw(self, offset=0):
         ease = easing.QuinticEaseOut(0,30,25).ease(min(min(25,self.key), min(25,300-self.key)))
-        rect = pg.Rect(20,offset+20, self.size[0]+20,ease)
+        rect = pg.Rect(10,offset+10, self.size[0]+20,ease)
 
         pg.draw.rect(screen, self.color, rect, 0, 7)
         pg.draw.rect(screen, self.light_color, rect, 2, 7)
@@ -1677,13 +1680,8 @@ class Board:
 
 # app functions (need them here too fr fr)
     
-def load_modes_t():
-    global custom_boards, selected_board, loading, loading_total, menu
-
-    old_menu = str(menu)
-    loading = 0
-    loading_total = 1
-    switch_menu('loading', True)
+def load_modes(show_popup=True):
+    global custom_boards, selected_board
 
     selected_board = 0
     custom_boards = []
@@ -1697,30 +1695,15 @@ def load_modes_t():
     for i in data['modes']:
         custom_boards.append(BoardSettings().from_dict(i))
 
-    switch_menu(old_menu if old_menu != 'sure' else 'custom', True)
-    popup(f'Loaded {len(custom_boards)} scenarios', (30,60,30))
+    if show_popup:
+        popup(f'Loaded {len(custom_boards)} scenarios', (30,60,30))
 
-def load_modes():
-    threading.Thread(target=load_modes_t).start()
-
-def save_modes_t():
+def save_modes(show_popup=True):
     global loading, loading_total, menu
-
-    old_menu = str(menu)
-    switch_menu('loading', True)
-    loading = 0
-    loading_total = len(custom_boards)
-
-    modes = {
-        'modes': [i.to_dict() for i in custom_boards]
-    }
+    modes = {'modes': [i.to_dict() for i in custom_boards]}
     write_file(modes, 'save/modes.ptsf')
-        
-    switch_menu(old_menu, True)
-    popup(f'Saved {len(custom_boards)} scenarios', (30,60,30))
-
-def save_modes():
-    threading.Thread(target=save_modes_t).start()
+    if show_popup:
+        popup(f'Saved {len(custom_boards)} scenarios', (30,60,30))
 
 
 # app variables
@@ -2299,7 +2282,7 @@ while running:
     
     for i in popups:
         i.update()
-        ongoing += i.draw(ongoing)+10
+        ongoing += i.draw(ongoing)+5
         if i.deletable:
             to_remove.append(i)
 
